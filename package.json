@@ -1,0 +1,48 @@
+{
+  "name": "vilocal",
+  "version": "1.0.0",
+  "local": true,
+  "description": "Local capture of Viessmann ViCare network data to MQTT with Home Assistant device discovery",
+  "keywords": [
+    "zigbee",
+    "zb",
+    "zbee",
+    "zcl",
+    "viessmann",
+    "vicare",
+    "thermostat",
+    "thermostats",
+    "trv",
+    "climatesensor",
+    "climatesensors",
+    "local"
+  ],
+  "type": "module",
+  "bin": "./index.js",
+  "scripts": {
+    "start": "node ./index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "author": {
+    "name": "Kristian Kraljic",
+    "email": "kris@kra.lc",
+    "url": "https://kra.lc/"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kristian/ViLocal.git"
+  },
+  "homepage": "https://github.com/kristian/ViLocal",
+  "bugs": {
+    "url": "https://github.com/kristian/ViLocal/issues"
+  },
+  "license": "Apache-2.0",
+  "dependencies": {
+    "mqtt": "^5.10.3",
+    "toml": "^3.0.0",
+    "zbtk": "^1.2.3"
+  },
+  "packageManager": "yarn@4.6.0"
+}

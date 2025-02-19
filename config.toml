@@ -1,0 +1,59 @@
+# device to capture packets from
+device = "/dev/en0"
+
+# log level, one of "error", "warn", "info" or "verbose", defaults to "warn"
+log_level = "warn"
+# the buffer size for the packet capture, defaults to 10MB
+buffer_size = 10485760
+
+# the network key of your ZigBee network, see README.md for instructions on how to capture a transport key
+network_key = "1234567890abcedf1234567890abcedf"
+
+# whether to publish unknown thermostats / climate sensors to device discovery, defaults to true
+# if set to true, devices that are not present in the 'thermostat' or 'climate_sensor' sections will be published with generic device names. a warning will be printed to the logs
+publish_unknown_devices = true
+
+[mqtt]
+
+# broker protocol / host / port
+url = "mqtt://127.0.0.1:1883"
+# broker username
+username = "user"
+# broker password
+password = "password"
+# base topic to publish attributes to, defaults to "ViLocal"
+# e.g.: ViLocal/<device_eui>/<cluster_id>/<attr_id>
+topic = "ViLocal"
+# retain a "online" topic, e.g. ViLocal/online
+# note: if set to false, home assistant will not be able to determine if the devices / entities are available
+online = true
+
+# the discovery prefix for devices, defaults to "homeassistant"
+device_discovery_prefix = "homeassistant"
+
+[mqtt.options]
+# other broker options (see https://github.com/mqttjs/MQTT.js?tab=readme-ov-file#client options)
+#...
+
+# a list of thermostats, with a unique name e.g. "bedroom", "bathroom", "kitchen", etc. for each thermostat
+[thermostats]
+
+# example for a thermostat
+[thermostats.bedroom]
+# the serial number / EUI-64 ID as printed on the device / visible in the ViCare app
+serial_no = "AB-CD-EF-12-34-56-78-90"
+# a human readable name of the thermostat, defaults to "Thermostat"
+name = "Bedroom"
+
+# optional serial number / EUI-64 Id of an associated climate sensor, for better temperature and humidity readings of the climate device
+climate_sensor_serial_no = "01-02-03-04-05-06-07-08"
+
+# a list of climate sensors, with a unique name e.g. "bedroom", "bathroom", "kitchen", etc. for each climate_sensor
+[climate_sensors]
+
+# example for a climate sensor
+[climate_sensors.bedroom]
+# the serial number / EUI-64 ID as printed on the device / visible in the ViCare app
+serial_no = "01-02-03-04-05-06-07-08"
+# a human readable name of the climate sensor, defaults to "Climate Sensor"
+name = "Bedroom"
