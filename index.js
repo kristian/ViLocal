@@ -199,6 +199,25 @@ async function publishDevice(eui, type, id, options) {
             current_humidity_topic: `${mqttTopic}/${formatEui(options.climate_sensor_serial_no)}/0x0405/0x0000`,
             current_humidity_template: '{{ (value | float ) / 100 | round(2) }}',
           })
+        }),
+        // also expose the individual values as sensors
+        ...discoveryComponent('heating_setpoint', 'sensor', {
+          name: 'Heating Setpoint', // will automatically get prefixed with the device name
+    
+          device_class: 'temperature',
+          unit_of_measurement: '°C',
+          suggested_display_precision: 1,
+          state_topic: `${deviceTopic}/0x0201/0x0012`, // Thermostat / Occupied Heating Setpoint
+          value_template: '{{ (value | float ) / 100 | round(2) }}'
+        }),
+        ...discoveryComponent('temperature', 'sensor', {
+          name: 'Temperature', // will automatically get prefixed with the device name
+    
+          device_class: 'temperature',
+          unit_of_measurement: '°C',
+          suggested_display_precision: 1,
+          state_topic: `${deviceTopic}/0x0201/0x0000`, // Thermostat / Local Temperature
+          value_template: '{{ (value | float ) / 100 | round(2) }}'
         })
       } : { // Climate Sensor
         ...discoveryComponent('temperature', 'sensor', {
