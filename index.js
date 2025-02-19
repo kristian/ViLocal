@@ -218,6 +218,13 @@ async function publishDevice(eui, type, id, options) {
           suggested_display_precision: 1,
           state_topic: `${deviceTopic}/0x0201/0x0000`, // Thermostat / Local Temperature
           value_template: '{{ (value | float ) / 100 | round(2) }}'
+        }),
+        ...discoveryComponent('window_open', 'binary_sensor', {
+          name: 'Window Open', // will automatically get prefixed with the device name
+    
+          device_class: 'window',
+          state_topic: `${deviceTopic}/0x0201/0x4000`, // Thermostat / Manufacturer Specific (OpenWindowDetection)
+          value_template: '{{ "ON" if (value | int) == 3 else "OFF" }}'
         })
       } : { // Climate Sensor
         ...discoveryComponent('temperature', 'sensor', {
