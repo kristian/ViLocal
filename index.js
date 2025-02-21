@@ -50,6 +50,8 @@ if (!config.network_key && !process.env.ZBTK_CRYPTO_PKS) {
 if (!config.mqtt || !config.mqtt.url) {
   throw new TypeError(`No MQTT (URL) configuration provided in "${ configFile }"`);
 }
+config.mqtt.online ??= true; // if not set, use a online topic
+
 const configDevices = new Set();
 iterateDevices((type, id, options) => {
   if (!options?.serial_no) {
@@ -64,14 +66,14 @@ iterateDevices((type, id, options) => {
   }
 });
 
-const mqttTopic = config.mqtt.topic ?? 'ViLocal',
-  mqttAvailabilityTopic = `${mqttTopic}/online`;
+const mqttTopic = config.mqtt.topic ?? 'ViLocal', mqttAvailabilityTopic =
+  `${mqttTopic}/${typeof config.mqtt.online === 'string' ? config.mqtt.online : 'online'}`;
 
 const mqttOptions = {
   username: config.mqtt.username,
   password: config.mqtt.password,
   ...(config.mqtt.options || {}),
-  ...((config.mqtt.online ?? true) ? {
+  ...(config.mqtt.online ? {
     will: { // last will to set ViLocal offline
       topic: mqttAvailabilityTopic,
       payload: `${false}`,

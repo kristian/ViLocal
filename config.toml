@@ -24,7 +24,7 @@ password = "password"
 # base topic to publish attributes to, defaults to "ViLocal"
 # e.g.: ViLocal/<device_eui>/<cluster_id>/<attr_id>
 topic = "ViLocal"
-# retain a "online" topic, e.g. ViLocal/online
+# retain a "online" topic, e.g. ViLocal/online, defaults to true / "online", set to a string to use a different topic
 # note: if set to false, home assistant will not be able to determine if the devices / entities are available
 online = true
 
