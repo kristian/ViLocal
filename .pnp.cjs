@@ -28,7 +28,7 @@ const RAW_RUNTIME_STATE =
         "packageLocation": "./",\
         "packageDependencies": [\
           ["mqtt", "npm:5.10.3"],\
-          ["toml", "npm:3.0.0"],\
+          ["smol-toml", "npm:1.3.1"],\
           ["zbtk", "npm:1.2.3"]\
         ],\
         "linkType": "SOFT"\
@@ -2116,6 +2116,15 @@ const RAW_RUNTIME_STATE =
         "linkType": "HARD"\
       }]\
     ]],\
+    ["smol-toml", [\
+      ["npm:1.3.1", {\
+        "packageLocation": "./.yarn/cache/smol-toml-npm-1.3.1-11d8975e54-bac5bf4f26.zip/node_modules/smol-toml/",\
+        "packageDependencies": [\
+          ["smol-toml", "npm:1.3.1"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
     ["socks", [\
       ["npm:2.8.4", {\
         "packageLocation": "./.yarn/cache/socks-npm-2.8.4-8194b86bd0-00c3271e23.zip/node_modules/socks/",\
@@ -2269,15 +2278,6 @@ const RAW_RUNTIME_STATE =
           ["minizlib", "npm:3.0.1"],\
           ["mkdirp", "npm:3.0.1"],\
           ["yallist", "npm:5.0.0"]\
-        ],\
-        "linkType": "HARD"\
-      }]\
-    ]],\
-    ["toml", [\
-      ["npm:3.0.0", {\
-        "packageLocation": "./.yarn/cache/toml-npm-3.0.0-f993270804-8d7ed3e700.zip/node_modules/toml/",\
-        "packageDependencies": [\
-          ["toml", "npm:3.0.0"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -2443,7 +2443,7 @@ const RAW_RUNTIME_STATE =
         "packageDependencies": [\
           ["vilocal", "workspace:."],\
           ["mqtt", "npm:5.10.3"],\
-          ["toml", "npm:3.0.0"],\
+          ["smol-toml", "npm:1.3.1"],\
           ["zbtk", "npm:1.2.3"]\
         ],\
         "linkType": "SOFT"\

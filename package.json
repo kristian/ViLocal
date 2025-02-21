@@ -1,6 +1,6 @@
 {
   "name": "vilocal",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "local": true,
   "description": "Local capture of Viessmann ViCare network data to MQTT with Home Assistant device discovery",
   "keywords": [
@@ -41,7 +41,7 @@
   "license": "Apache-2.0",
   "dependencies": {
     "mqtt": "^5.10.3",
-    "toml": "^3.0.0",
+    "smol-toml": "^1.3.1",
     "zbtk": "^1.2.3"
   },
   "packageManager": "yarn@4.6.0"

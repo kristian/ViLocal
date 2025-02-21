@@ -15,7 +15,7 @@ async function exists(path) {
     }
   }
 }
-import toml from 'toml';
+import { parse as parseToml } from 'smol-toml';
 
 import { connectAsync as mqttConnect } from 'mqtt';
 import { open as openCap } from 'zbtk/cap';
@@ -27,7 +27,7 @@ import packageJson from './package.json' with { type: 'json' };
 const TYPE_THERMOSTAT = 'thermostat', TYPE_CLIMATE_SENSOR = 'climate_sensor';
 
 const configFile = (await exists('local_config.toml')) ? 'local_config.toml' : 'config.toml';
-const config = toml.parse(await fs.readFile(configFile, 'utf8'));
+const config = parseToml(await fs.readFile(configFile, 'utf8'));
 
 async function iterateDevices(callback) {
   for (const [type, devices] of Object.entries({
