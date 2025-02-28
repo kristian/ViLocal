@@ -343,6 +343,8 @@ ViLocal by [Kristian Kraljić](https://kra.lc/).
 
 Please file any questions / issues [on Github](https://github.com/kristian/ViLocal/issues).
 
+Any ideas / comments, or just want to chat? Feel free to [start a discussion](https://github.com/kristian/ViLocal/discussions).
+
 ## License
 
 This library is licensed under the [Apache 2.0](LICENSE) license.
