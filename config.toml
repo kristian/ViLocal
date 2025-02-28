@@ -5,6 +5,12 @@ device = "/dev/en0"
 log_level = "warn"
 # the buffer size for the packet capture, defaults to 10MB
 buffer_size = 10485760
+# format of buffers published to MQTT, defaults to "hex", one of:
+#   "id" or  "identity" (publish binary data to MQTT)
+#   "hex" or "hex_upper" (lower/upper case hex string)
+#   "0x" or "0x_upper" (lower/upper case hex string with 0x prefix)
+#   "base64" (base64 encoded string)
+buffer_format = "hex"
 
 # the network key of your ZigBee network, see README.md for instructions on how to capture a transport key
 network_key = "1234567890abcedf1234567890abcedf"

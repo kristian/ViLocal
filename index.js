@@ -16,6 +16,7 @@ async function exists(path) {
   }
 }
 import { parse as parseToml } from 'smol-toml';
+import { toFormat as bufferFormat } from 'buffer-to-str';
 
 import { connectAsync as mqttConnect } from 'mqtt';
 import { open as openCap } from 'zbtk/cap';
@@ -295,6 +296,7 @@ config.network_key && pk(config.network_key);
 // start capture session
 const capSession = await openCap(config.device, {
   bufferSize: config.buffer_size ?? 10485760,
+  bufferFormat: buffer => bufferFormat(buffer, config.buffer_format ?? 'hex'),
   emit: ['attribute'],
   out: {
     log: [config.log_level ?? 'warn'].flat(),
