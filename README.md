@@ -20,7 +20,10 @@ ViLocal utilizes the [ZigBee Toolkit for Node.js](https://www.npmjs.com/package/
 
 Any captured attributes are then sent to your local (or remote, heck...) MQTT Broker and can be consumed by any home automation software, like Home Assistant. ViLocal implements the [MQTT (Device) Discovery](https://www.home-assistant.io/integrations/mqtt/#mqtt-discovery) protocol, to expose any found and / or configured thermostats and climate sensors automatically. If configured with the Home Assistant MQTT integration, Home Assistant will automatically pick up all found devices and create sensors / entities for them.
 
-Currently this mechanism is read-only, meaning you will be able to monitor / get statistics of your thermostats and climate sensors. Changing the thermostat values / valves, e.g. by setting the desired target temperature is not (yet) possible.
+> [!NOTE]
+> Whilst only certain attributes are being visualized through the device discovery feature, all parameters read from, written to, or reported by your devices will be published via MQTT. This includes all hidden / vendor-specific attributes of our Viessmann ViCare devices.
+
+Currently this mechanism is **read-only**, meaning you will be able to monitor / get statistics of your thermostats and climate sensors. Changing the thermostat values / valves, e.g. by setting the desired target temperature is not (yet) possible.
 
 ## Set-Up / Installation
 
