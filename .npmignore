@@ -1,0 +1,6 @@
+.vscode/
+.yarn/
+.editorconfig
+.gitattributes
+local_config.toml
+package.tgz

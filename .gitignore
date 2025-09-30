@@ -13,3 +13,4 @@
 #.pnp.*
 
 local_config.toml
+package.tgz
