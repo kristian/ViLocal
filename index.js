@@ -251,6 +251,7 @@ async function publishDevice(eui, type, id, options) {
       }),
       ...discoveryComponent('battery_level', 'sensor', {
         name: 'Battery Level', // will automatically get prefixed with the device name
+        entity_category: 'diagnostic',
 
         device_class: 'battery',
         unit_of_measurement: '%',
@@ -260,6 +261,7 @@ async function publishDevice(eui, type, id, options) {
       }),
       ...discoveryComponent('link_quality', 'sensor', {
         name: 'Link Quality', // will automatically get prefixed with the device name
+        entity_category: 'diagnostic',
 
         icon: 'mdi:signal',
         unit_of_measurement: '%',
@@ -269,6 +271,7 @@ async function publishDevice(eui, type, id, options) {
       }),
       ...discoveryComponent('signal_strength', 'sensor', {
         name: 'Signal Strength', // will automatically get prefixed with the device name
+        entity_category: 'diagnostic',
 
         device_class: 'signal_strength',
         unit_of_measurement: 'dBm',
