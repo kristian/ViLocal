@@ -211,7 +211,8 @@ async function publishDevice(eui, type, id, options) {
           unit_of_measurement: '°C',
           suggested_display_precision: 1,
           state_topic: `${deviceTopic}/0x0201/0x0012`, // Thermostat / Occupied Heating Setpoint
-          value_template: '{{ (value | float ) / 100 | round(2) }}'
+          value_template: '{{ (value | float ) / 100 | round(2) }}',
+          state_class: 'measurement'
         }),
         ...discoveryComponent('temperature', 'sensor', {
           name: 'Temperature', // will automatically get prefixed with the device name
@@ -220,7 +221,8 @@ async function publishDevice(eui, type, id, options) {
           unit_of_measurement: '°C',
           suggested_display_precision: 1,
           state_topic: `${deviceTopic}/0x0201/0x0000`, // Thermostat / Local Temperature
-          value_template: '{{ (value | float ) / 100 | round(2) }}'
+          value_template: '{{ (value | float ) / 100 | round(2) }}',
+          state_class: 'measurement'
         }),
         ...discoveryComponent('window_open', 'binary_sensor', {
           name: 'Window Open', // will automatically get prefixed with the device name
@@ -237,7 +239,8 @@ async function publishDevice(eui, type, id, options) {
           unit_of_measurement: '°C',
           suggested_display_precision: 1,
           state_topic: `${deviceTopic}/0x0402/0x0000`, // Temperature Measurement / Value
-          value_template: '{{ (value | float ) / 100 | round(2) }}'
+          value_template: '{{ (value | float ) / 100 | round(2) }}',
+          state_class: 'measurement'
         }),
         ...discoveryComponent('humidity', 'sensor', {
           name: 'Humidity', // will automatically get prefixed with the device name
@@ -246,7 +249,8 @@ async function publishDevice(eui, type, id, options) {
           unit_of_measurement: '%',
           suggested_display_precision: 0,
           state_topic: `${deviceTopic}/0x0405/0x0000`, // Relative Humidity / Measurement Value
-          value_template: '{{ (value | float ) / 100 | round(2) }}'
+          value_template: '{{ (value | float ) / 100 | round(2) }}',
+          state_class: 'measurement'
         })
       }),
       ...discoveryComponent('battery_level', 'sensor', {
