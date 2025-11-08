@@ -136,7 +136,7 @@ async function publishDevice(eui, type, id, options) {
       [unique_id]: {
         platform,
 
-        object_id: `vilocal_${type}${id !== type ? `_${id}` : ''}${suffix}`,
+        default_entity_id: `${platform}.vilocal_${type}${id !== type ? `_${id}` : ''}${suffix}`,
         name: options?.name, // will automatically get prefixed with the device name
         unique_id,
 
