@@ -1,7 +1,8 @@
 #!/usr/bin/env node
-process.env.ZBTK_FORMAT_EUI_SEPARATOR = '-'; // like Viessmann uses it for their devices
+import { env, stdin } from 'node:process';
+env.ZBTK_FORMAT_EUI_SEPARATOR = '-'; // like Viessmann uses it for their devices
 
-import fs from 'fs/promises';
+import fs from 'node:fs/promises';
 import { Buffer } from 'node:buffer';
 async function exists(path) {
   try {
@@ -19,7 +20,7 @@ import { parse as parseToml } from 'smol-toml';
 import { toFormat as bufferFormat } from 'buffer-to-str';
 
 import { connectAsync as mqttConnect } from 'mqtt';
-import { open as openCap } from 'zbtk/cap';
+import { process as processCap } from 'zbtk/cap';
 import { pk } from 'zbtk/crypto';
 import { fromHex } from 'zbtk/utils';
 import { eui as formatEui } from 'zbtk/format';
@@ -42,10 +43,10 @@ async function iterateDevices(callback) {
 }
 
 // validate / check configuration for basic consistency
-if (!config.device) {
-  throw new TypeError(`No capture "device" configured in "${ configFile }"`);
+if (!config.named_pipe && stdin.isTTY) { // note that stdin.isTTY is true in case there is NO input and falsy (undefined) if there is data piped to stdin, see https://nodejs.org/api/tty.html#tty_tty
+  throw new TypeError(`No "named_pipe" configured in "${ configFile }", nor anything is piped into standard input (stdin). Please provide a (P)CAP compatible stream either via a named pipe or stdin.`);
 }
-if (!config.network_key && !process.env.ZBTK_CRYPTO_PKS) {
+if (!config.network_key && !env.ZBTK_CRYPTO_PKS) {
   console.warn(`Neither a "network_key" is configured in "${ configFile }", nor the "ZBTK_CRYPTO_PKS" environment variable is set. Without a network key, packets will not get decrypted, which will likely cause that no attributes are being reported. Please capture a transport key / configure a network key to enable proper functionality.`)
 }
 if (!config.mqtt || !config.mqtt.url) {
@@ -300,9 +301,9 @@ await iterateDevices(async (type, id, options) => {
 // set the pre-configured network key
 config.network_key && pk(config.network_key);
 
-// start capture session
-const capSession = await openCap(config.device, {
-  bufferSize: config.buffer_size ?? 10485760,
+// process capture packets
+const capEmitter = await processCap(config.named_pipe ?? stdin, {
+  unwrapLayers: config.unwrap_layers ?? [],
   bufferFormat: buffer => bufferFormat(buffer, config.buffer_format ?? 'hex'),
   emit: ['attribute'],
   out: {
@@ -314,7 +315,7 @@ const capSession = await openCap(config.device, {
   }
 });
 
-capSession.on('attribute', async function(attr, context) {
+capEmitter.on('attribute', async function(attr, context) {
   const { eui, cluster } = context;
 
   let type;

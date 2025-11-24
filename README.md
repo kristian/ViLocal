@@ -33,102 +33,13 @@ This guide describes how to set-up ViLocal using a Raspberry Pi and a Home Assis
 
 The first step is to set-up your ZigBee sniffing hardware. This set-up is done on a clean Raspberry Pi with Raspberry Pi OS Lite (aka Raspbian w/o a desktop environment), however as mentioned beforehand, it should work on similar hardware / VMs as well.
 
-Depending on which [supported capture hardware](https://github.com/kristian/zbtk/blob/main/docs/supported-capture-devices.md) you plan on using, follow the set-up instructions provided there. In my case I am using a Ubisys Wireshark stick, so the set-up is pretty straightforward, as described in the [manual provided by Ubisys](https://www.ubisys.de/wp-content/uploads/ubisys-ieee802154-wireshark-manual.pdf). First, grab yourself the Linux headers and kernel package required, in order to re-compile the needed network interface driver:
+Depending on which [capture hardware](https://github.com/kristian/zbtk/blob/main/docs/tested-capture-devices.md) you plan on using, follow the set-up instructions provided. In my case I was first using a Ubisys Wireshark stick and later switched to an SMLIGHT SLZB-06M ethernet dongle. For both devices the set-up was quite straight forward. A major advantage of the SMLIGHT dongle, compared to the Ubisys stick is, that it can be freely placed anywhere in your house using ethernet / PoE and also the set-up does not require any drivers or manual patching of the Linux kernel. The SMLIGHT dongle is a true "out-of-the-box" solution, just make sure the device & radio firmware are up-to-date, by using the OTA update in its web UI and you are ready to go! 
 
-```bash
-sudo apt-get update && sudo apt-get install -y linux-headers-$(uname –r) linux-libc-dev kernel-package
-```
-
-You can grab yourself a cup of coffee / tee, this will take some time to download and set-up.
-
-After the installation is done, run `uname -r` to get the major / minor release of your Linux kernel, in my case `6.6.51+rpt-rpi-v7`, so 6.6. Proceed by downloading the Linux kernel sources:
-
-```bash
-sudo nano /etc/apt/sources.list
-```
-
-Uncomment the `deb-src` line at the end of the file, exit and save. Then proceed downloading the kernel sources for your release:
-
-```bash
-cd /usr/src
-sudo apt-get update && sudo apt-get source linux-source-6.6
-```
-
-Download and extract the Ubisys IEEE 802.15.4 Wireshark USB stick driver package for Linux:
+Now is a good time to also install Node.js in case you haven't done so, yet. Please make sure you check the required Node.js engine version and install it on your machine:
 
 ```bash
 cd
-wget http://www.ubisys.de/downloads/ubisys-m7b-rndis.tgz
-tar -xzf ubisys-m7b-rndis.tgz
-```
-
-Copy the `rndis_host.c` file from the Linux kernel sources to the Ubisys driver folder, to patch it in the next step:
-
-```bash
-cd ubisys-m7b-rndis
-cp /usr/src/linux-6*/drivers/net/usb/rndis_host.c .
-```
-
-Now patch the kernel module (note that is okay that some hunks cannot be applied), then `make` and `sudo make install` to apply the patch:
-
-```bash
-patch rndis_host.c rndis_host.c.patch
-make
-sudo make install
-```
-
-In my case (as tested February 17th 2025), patching the Debian 12 Bookworm sources on Kernel version `6.6.51+rpt-rpi-v7`, resulted in a compilation error on the `make` command. This is due to some renamed constants in the patch / driver. I had to patch the patch with:
-
-```batch
-sed -i 's/OID_STR(OID_/OID_STR(RNDIS_OID_/g' rndis_host.c
-```
-
-Afterwards repeat the `make` / `sudo make install`, which should now succeed. As a last step, as recommended by Ubisys, lets disable IPv6 for the interface:
-
-```bash
-echo "net.ipv6.conf.eth1.disable_ipv6 = 1" | sudo tee -a /etc/sysctl.conf
-sudo sysctl -p
-```
-
-Validate that the `rndis_host` driver is currently not loaded. In case it is loaded, unload it before plugging in the USB capture stick to your Raspberry Pi:
-
-```batch
-lsmod
-sudo rmmod rndis_wlan rndis_host
-```
-
-You are ready to plug-in your capture USB stick now. After plugging in the USB stick, use `dmesg` to check which interface the USB stick uses:
-
-```batch
-[547.998233] usb 1-1.4: new full-speed USB device number 4 using dwc_otg
-[547.133729] usb 1-1.4: New USB device found, idVendor=19a6, idProduct=000a, bcdDevice= 1.05
-...
-[547.704199] rndis_host 1-1.4:1.0: RNDIS_MSG_QUERY(0x00010202) failed, -47
-[547.707819] rndis_host ieee802154 channel is 11
-[547.714346] rndis_host 1-1.4:1.0 eth1: register 'rndis_host' at usb-3f980000.usb-1.4, RNDIS device, 00:1f:ee:00:29:5e
-[547.714591] usbcore: registered new interface driver rndis_host
-[547.726540] usbcore: registered new interface driver rndis_wlan
-```
-
-As you can see in line `547.707819` the patch was applied successfully and ZigBee channel 11 was enabled, and in the following line `547.714346` you see that the interface name in my case was `eth1`. 
-
-Nice, first steps complete and you are now ready to capture first packets in your ViCare ZigBee network.
-
-### 2. Find the Channel of your ViCare Network and sniff for your Network Key
-
-The next goal is to find the needed credentials to be able to sniff into the ViCare network. Most notably we have to find the channel of the ViCare ZigBee network, as well as the so called "Network Key", used for encrypting the traffic in the network. Let's get started.
-
-Follow the [installation instructions of the ZigBee Toolkit](https://github.com/kristian/zbtk?tab=readme-ov-file#installation). In a nutshell, start by installing the PCAP libary:
-
-```bash
-sudo apt-get update && sudo apt-get install -y libpcap-dev
-```
-
-In case you have not installed Node.js yet, do that now as well:
-
-```bash
-cd
-curl -fsSL https://deb.nodesource.com/setup_22.x -o nodesource_setup.sh
+curl -fsSL https://deb.nodesource.com/setup_24.x -o nodesource_setup.sh
 sudo -E bash nodesource_setup.sh
 sudo apt-get install -y nodejs
 ```
@@ -140,30 +51,39 @@ node -v
 sudo corepack enable
 ```
 
-Then start executing the steps as described in the [application example of the ZigBee Toolkit](https://github.com/kristian/zbtk?tab=readme-ov-file#application-examples), to check for which ZigBee channel is used by your ViCare network. To speed up the process, I would recommend first downloading the ZigBee Toolkit:
+While you are at it, also install the ZigBee Toolkit (`zbtk`), it will come in handy later:
 
 ```bash
-cd
-mkdir zbtk
-cd zbtk
-yarn init -2
-yarn add zbtk
+npm install -g zbtk
 ```
 
-Then start looking for the right channel:
+Follow any other steps required in the [capture device list of the ZigBee Toolkit](https://github.com/kristian/zbtk/blob/main/docs/tested-capture-devices.md), for example, when using the SMLIGHT stick, we will use a CLI tool called `ember-sniff` to pipe in the required (P)CAP data into ViLocal, so install it as well:
 
 ```bash
-sudo rmmod rndis_wlan rndis_host
-sudo ~/ubisys-m7b-rndis/ieee802154_options.sh –c 11
-sudo yarn run zbtk cap eth1
+npm install -g ember-sniff
 ```
 
-Wait for a couple of seconds (depending on how busy your ZigBee network is), if you don't see any traffic, try with the next channel until you see packets logged to console:
+Nice, first steps complete and you are now ready to capture first packets in your ViCare ZigBee network.
+
+### 2. Find the Channel of your ViCare Network and sniff for your Network Key
+
+The next goal is to find the needed credentials to be able to sniff into the ViCare network. Most notably we have to find the channel of the ViCare ZigBee network, as well as the so called "Network Key", used for encrypting the traffic in the network. Let's get started.
+
+Follow the [installation instructions of the ZigBee Toolkit](https://github.com/kristian/zbtk?tab=readme-ov-file#installation). Then start executing the steps as described in the [application example of the ZigBee Toolkit](https://github.com/kristian/zbtk?tab=readme-ov-file#application-examples), to check for which ZigBee channel is used by your ViCare network.
+
+Depending on the [capture device](https://github.com/kristian/zbtk/blob/main/docs/tested-capture-devices.md) you use, switching channels might be slightly different. However essentially it always comes down to changing a parameter to switch the channel and trial and error iterating through all possible channels 11-26, until you find the channel ZigBee data is transmitted on:
 
 ```bash
-> sudo rmmod rndis_wlan rndis_host
-> sudo ./ieee802154_options.sh –c 19
-> sudo yarn run zbtk cap eth1
+ember-sniff -p tcp://192.168.1.42:6638 -c 11 | tcpdump -vvv -r -
+# ... repeat until you found the channel sending ZigBee data
+ember-sniff -p tcp://192.168.1.42:6638 -c 12 | tcpdump -vvv -r -
+# ...
+```
+
+Wait for a couple of seconds (depending on how busy your ZigBee network is), if you don't see any traffic, try with the next channel until you see packets. Afterwards you can already try to run the ZigBee Toolkit to see the parsed output of your network:
+
+```bash
+> ember-sniff -p tcp://192.168.1.42:6638 -c 19 | zbtk cap
 
 {"protocol_id":"EX","version":2,"type":1,"channel_id":19,"device_id":65534,"lqi_mode":0,"lqi":170,"time":{"$hex":"d84f13c651a43783"},"seqno":3236,"length":12,"wpan":{"fcf":{"$hex":"6388"},"fc":{"reserved":false,"pan_id_compression":true,"ack_request":true,"pending":false,"security":false,"type":3,"src_addr_mode":2,"version":0,"dst_addr_mode":2,"ie_present":false,"seqno_suppression":false},"seq_no":2,"dst_pan":{"$hex":"de8c"},"dst16":{"$hex":"0000"},"src16":{"$hex":"f00d"},"cmd":{"id":{"$hex":"04"}},"ti_cc24xx_metadata":{"$hex":"f8ea"}}} (WPAN_CMD_DATA_REQ)
 ...
@@ -174,14 +94,14 @@ Now to keep following the instructions of the ZigBee Toolkit, you need a new ViC
 First step calculate the Link Key based on the Install Code of your device:
 
 ```bash
-yarn run zbtk ic link EE917C25E94123C227B93F4D50A0C34F373D
+zbtk ic link EE917C25E94123C227B93F4D50A0C34F373D
 ```
 
 Use the output `4c23a848a76f432113510a301c5fdfd2` as a pre-configured key and start capturing again:
 
 ```bash
 export ZBTK_CRYPTO_PKS=4c23a848a76f432113510a301c5fdfd2
-sudo yarn run zbtk cap eth1 --log attribute
+ember-sniff -p tcp://192.168.1.42:6638 -c 19 | zbtk cap --log attribute
 ```
 
 Now (re-)join the ViCare device to the network, by pairing it with your network using the ViCare app. After some seconds, you should see a transport key message and the `Packet encrypted` warning messages should disappear:
@@ -213,7 +133,7 @@ After the installation is done, open your Home Assistant Settings, goto Add-Ons,
   password: abcd1234
 ```
 
-Press save and continue with the next step. Back on your Raspberry Pi, we can now start setting up ViLocal. ViLocal uses what is called [zero-install](https://yarnpkg.com/features/caching#zero-installs) by Yarn. Meaning copying this repository onto your Raspberry Pi should be enough to get it installed:
+Press save and continue with the next step. Back on your Raspberry Pi, we can now start setting up ViLocal. ViLocal uses what is called [zero-install](https://yarnpkg.com/features/caching#zero-installs) by Yarn. Meaning copying the ViLocal repository onto your Raspberry Pi should be enough to get it installed:
 
 ```bash
 cd
@@ -221,22 +141,23 @@ wget https://github.com/kristian/ViLocal/archive/refs/heads/main.zip
 unzip main.zip
 ```
 
-In order to compile the PCAP binaries on your Raspberry Pi, it is still require to run a `yarn install`:
+Alternatively, in case you have `git` installed locally (and your device is connected to the internet) you can also clone the repository, allowing you to easily upgrade ViLocal using a `git pull` in future:
+
+```bash
+git clone https://github.com/kristian/ViLocal.git
+```
+
+Start by editing the `config.toml` configuration file:
 
 ```bash
 cd ViLocal-main
-yarn install
-```
-
-Now start editing the `config.toml` configuration file:
-
-```bash
 nano config.toml
 ```
 
-We change the following options:
+In case you used a `git clone`, it might be more favorable for you to copy the configuration file to a `local-config.toml`, to avoid any merge conflicts when upgrading ViLocal in future.
 
-- `device`: To match your network interface, `eth1` in my case
+Now change the following options:
+
 - `network_key`: To the previously captured network key, so `52f0fe8052ebb35907daa243c95a2ff4` in this example
 - `mqtt.broker`: To the broker URL / the host of your Home Assistant installation, e.g.: `mqtt://192.168.1.10:1883`
 - `mqtt.username` and `mqtt.password`: To the user and password that we created in the last step. User `mqtt`, password `abcd1234`
@@ -278,10 +199,10 @@ serial_no = "FF-EE-DD-CC-BB-AA-00-00"
 name = "Bathroom"
 ```
 
-That should be it! Start up ViLocal:
+That should be it! Start up ViLocal and use the same piped input stream of your device, that you had been using before to start the ZigBee Toolkit:
 
 ```bash
-sudo yarn run start
+ember-sniff -p tcp://192.168.1.42:6638 -c 19 | yarn run start
 ```
 
 In case there are no warning / errors printed to your logs, data should start being published to your MQTT Broker soon and the devices should get announced and appear in your Home Assistant installation automatically.
@@ -306,10 +227,7 @@ Wants=network.target
 Type=exec
 User=root
 WorkingDirectory=/home/kristian/ViLocal-main
-ExecStartPre=/sbin/modprobe -r rndis_wlan rndis_host
-ExecStartPre=/bin/bash -c '/home/kristian/ubisys-m7b-rndis/ieee802154_options.sh -c 19'
-ExecStartPre=/sbin/ip link set dev eth1 up
-ExecStart=/usr/bin/yarn run start
+ExecStart=/bin/bash -c '/usr/bin/ember-sniff -p tcp://192.168.1.42:6638 -c 19 | /usr/bin/yarn run start'
 Restart=on-failure
 
 [Install]
@@ -319,9 +237,18 @@ WantedBy=multi-user.target
 Don't forget to adapt:
 
 - The `WorkingDirectory` path to the ViLocal directory `/home/kristian/ViLocal-main`
-- The `ExecStartPre` ZigBee channel for capture `19`
-- The `ExecStartPre` interface of your capture device `eth1`
- 
+- The ZigBee channel for capture `19`
+
+In case you are using the Ubisys Wireshark stick, add the following line to the `[Service]` section:
+
+```ini
+ExecStartPre=/sbin/modprobe -r rndis_wlan rndis_host
+ExecStartPre=/bin/bash -c '/home/kristian/ubisys-m7b-rndis/ieee802154_options.sh -c 19'
+ExecStartPre=/sbin/ip link set dev eth1 up
+```
+
+Also here don't forget to adapt the channel and path to your `ubisys-m7b-rndis` driver package.
+
 Test the service with:
 
 ```bash

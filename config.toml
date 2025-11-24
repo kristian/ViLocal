@@ -1,10 +1,11 @@
-# device to capture packets from
-device = "/dev/en0"
+# by default ViLocal will attempt to read a (P)CAP stream from standard input (stdin), however you can also specify a named pipe here to read from instead
+# named_pipe = "/tmp/zigbee_nwk.pipe"
+
+# the layers of the packet to unwrap, to get to the IEEE 802.15.4 Low-Rate Wireless PAN (WPAN), one of "eth", "ip4", "ip6", "tcp", "udp", "zep", defaults to [] (no unwrapping)
+unwrap_layers = []
 
 # log level, one of "error", "warn", "info" or "verbose", defaults to "warn"
 log_level = "warn"
-# the buffer size for the packet capture, defaults to 10MB
-buffer_size = 10485760
 # format of buffers published to MQTT, defaults to "hex", one of:
 #   "id" or  "identity" (publish binary data to MQTT)
 #   "hex" or "hex_upper" (lower/upper case hex string)
