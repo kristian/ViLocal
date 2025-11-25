@@ -51,6 +51,8 @@ device_discovery_prefix = "homeassistant"
 serial_no = "AB-CD-EF-12-34-56-78-90"
 # a human readable name of the thermostat, defaults to "Thermostat"
 name = "Bedroom"
+# optional the suggested area of the device, e.g. "Living Room", "Bedroom", "Kitchen", etc.
+suggested_area = "Bedroom"
 
 # optional serial number / EUI-64 Id of an associated climate sensor, for better temperature and humidity readings of the climate device
 climate_sensor_serial_no = "01-02-03-04-05-06-07-08"
@@ -64,3 +66,5 @@ climate_sensor_serial_no = "01-02-03-04-05-06-07-08"
 serial_no = "01-02-03-04-05-06-07-08"
 # a human readable name of the climate sensor, defaults to "Climate Sensor"
 name = "Bedroom"
+# optional the suggested area of the device, e.g. "Living Room", "Bedroom", "Kitchen", etc.
+suggested_area = "Bedroom"

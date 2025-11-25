@@ -102,6 +102,7 @@ const knownDevices = new Set();
  * @param {string} [id] the ID of the device
  * @param {object} [options] config. options for the device
  * @param {string} [options.name] the name of the device
+ * @param {string} [options.suggested_area] the suggested area of the device
  * @param {Buffer} [options.climate_sensor_serial_no] the EUI-64 of the climate sensor associated with the thermostat, only for type "thermostat"
  */
 async function publishDevice(eui, type, id, options) {
@@ -153,7 +154,8 @@ async function publishDevice(eui, type, id, options) {
       serial_number: formattedEui,
       manufacturer: 'Viessmann',
       model: `ViCare ${genericName}`,
-      model_id: type === TYPE_THERMOSTAT ? 'ZK03840' : 'ZK05991'
+      model_id: type === TYPE_THERMOSTAT ? 'ZK03840' : 'ZK05991',
+      ...(options?.suggested_area ? { suggested_area: options.suggested_area } : {})
     },
     origin: { // see https://www.home-assistant.io/integrations/mqtt/#adding-information-about-the-origin-of-a-discovery-message
       name: 'ViLocal',
