@@ -316,7 +316,10 @@ const capEmitter = await processCap(config.named_pipe ?? stdin, {
     }
   }
 });
-
+capEmitter.on('end', async () => {
+  // close the MQTT client, as soon as the stream ends
+  await mqttClient.end();
+});
 capEmitter.on('attribute', async function(attr, context) {
   const { eui, cluster } = context;
 

@@ -30,7 +30,7 @@ const RAW_RUNTIME_STATE =
           ["buffer-to-str", "npm:1.0.0"],\
           ["mqtt", "npm:5.14.1"],\
           ["smol-toml", "npm:1.5.2"],\
-          ["zbtk", "npm:2.4.0"]\
+          ["zbtk", "npm:2.4.1"]\
         ],\
         "linkType": "SOFT"\
       }]\
@@ -1735,7 +1735,7 @@ const RAW_RUNTIME_STATE =
           ["buffer-to-str", "npm:1.0.0"],\
           ["mqtt", "npm:5.14.1"],\
           ["smol-toml", "npm:1.5.2"],\
-          ["zbtk", "npm:2.4.0"]\
+          ["zbtk", "npm:2.4.1"]\
         ],\
         "linkType": "SOFT"\
       }]\
@@ -1938,10 +1938,10 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["zbtk", [\
-      ["npm:2.4.0", {\
-        "packageLocation": "./.yarn/cache/zbtk-npm-2.4.0-cec4a64e5a-25a72c0aaf.zip/node_modules/zbtk/",\
+      ["npm:2.4.1", {\
+        "packageLocation": "./.yarn/cache/zbtk-npm-2.4.1-ff09632857-e99219b83c.zip/node_modules/zbtk/",\
         "packageDependencies": [\
-          ["zbtk", "npm:2.4.0"],\
+          ["zbtk", "npm:2.4.1"],\
           ["binary-parser-encoder-bump", "npm:2.2.1"],\
           ["cap-decoders", "npm:0.2.0"],\
           ["es-main", "npm:1.4.0"],\

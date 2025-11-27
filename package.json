@@ -42,7 +42,7 @@
     "buffer-to-str": "^1.0.0",
     "mqtt": "^5.14.1",
     "smol-toml": "^1.5.2",
-    "zbtk": "^2.4.0"
+    "zbtk": "^2.4.1"
   },
   "packageManager": "yarn@4.6.0"
 }

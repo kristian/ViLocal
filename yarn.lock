@@ -1494,7 +1494,7 @@ __metadata:
     buffer-to-str: "npm:^1.0.0"
     mqtt: "npm:^5.14.1"
     smol-toml: "npm:^1.5.2"
-    zbtk: "npm:^2.4.0"
+    zbtk: "npm:^2.4.1"
   bin:
     vilocal: ./index.js
   languageName: unknown
@@ -1671,9 +1671,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"zbtk@npm:^2.4.0":
-  version: 2.4.0
-  resolution: "zbtk@npm:2.4.0"
+"zbtk@npm:^2.4.1":
+  version: 2.4.1
+  resolution: "zbtk@npm:2.4.1"
   dependencies:
     binary-parser-encoder-bump: "npm:^2.2.1"
     cap-decoders: "npm:^0.2.0"
@@ -1685,6 +1685,6 @@ __metadata:
     yargs: "npm:^18.0.0"
   bin:
     zbtk: ./cli.js
-  checksum: 10c0/25a72c0aaf3caaa179b0232f3d1c92cd238ca5d75d5640be159df8a3969b065a45cac0905ab9ad140505f8b492ecee67a01c799d6183184b614e19e713fb05c6
+  checksum: 10c0/e99219b83cd9cade20308ee86109ed6aa5a805e6dfaa24b8bb1ef13cd4a37a38fb258998bc95e561853d6944fe72dbe582b0cbdecd0d62bb0d0c7605267fd23d
   languageName: node
   linkType: hard
