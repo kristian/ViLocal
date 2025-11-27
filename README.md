@@ -227,14 +227,14 @@ Wants=network.target
 Type=exec
 User=root
 WorkingDirectory=/home/kristian/ViLocal-main
-ExecStart=/bin/bash -c '/usr/bin/ember-sniff -p tcp://192.168.1.42:6638 -c 19 | /usr/bin/yarn run start'
+ExecStart=/bin/bash -c 'set -o pipefail; /usr/bin/ember-sniff -p tcp://192.168.1.42:6638 -c 19 | /usr/bin/yarn run start'
 Restart=on-failure
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-Don't forget to adapt:
+Important, do not forget to set `set -o pipefail`, in order for the pipeline to fail, if the input stream has an error (e.g. due to the adapter restarting, a network issue or similar). Also don't forget to adapt:
 
 - The `WorkingDirectory` path to the ViLocal directory `/home/kristian/ViLocal-main`
 - The ZigBee channel for capture `19`
