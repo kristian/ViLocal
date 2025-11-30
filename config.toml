@@ -1,5 +1,5 @@
 # by default ViLocal will attempt to read a (P)CAP stream from standard input (stdin), however you can also specify a named pipe here to read from instead
-# named_pipe = "/tmp/zigbee_nwk.pipe"
+# named_pipe = "/run/vicare_sniff.fifo"
 
 # the layers of the packet to unwrap, to get to the IEEE 802.15.4 Low-Rate Wireless PAN (WPAN), one of "eth", "ip4", "ip6", "tcp", "udp", "zep", defaults to [] (no unwrapping)
 unwrap_layers = []

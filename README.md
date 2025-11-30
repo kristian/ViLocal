@@ -227,15 +227,18 @@ Wants=network.target
 Type=exec
 User=root
 WorkingDirectory=/home/kristian/ViLocal-main
-ExecStart=/bin/bash -c 'set -o pipefail; /usr/bin/ember-sniff -p tcp://192.168.1.42:6638 -c 19 | /usr/bin/yarn run start'
+ExecStart=/home/kristian/ViLocal-main/start.sh /usr/bin/ember-sniff -p tcp://192.168.1.42:6638 -c 19
 Restart=on-failure
+KillMode=control-group
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-Important, do not forget to set `set -o pipefail`, in order for the pipeline to fail, if the input stream has an error (e.g. due to the adapter restarting, a network issue or similar). Also don't forget to adapt:
+Don't forget to adapt / set:
 
+- Uncomment / set the `named_pipe` attribute in your `config.toml` file
+- The input pipeline, passed to the `start.sh`, depending on the device you use
 - The `WorkingDirectory` path to the ViLocal directory `/home/kristian/ViLocal-main`
 - The ZigBee channel for capture `19`
 

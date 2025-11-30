@@ -4,3 +4,4 @@
 .gitattributes
 local_config.toml
 package.tgz
+start.sh
