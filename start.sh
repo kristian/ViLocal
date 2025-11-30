@@ -45,19 +45,19 @@ PIPE_CMD=("$@")
 "${PIPE_CMD[@]}" > "$FIFO" &
 INPUT_PID=$!
 
-# start ViLocal (consumer)
+# start the consumer (ViLocal)
 yarn run start &
 YARN_PID=$!
 
-# Wait until *one* of them exits
+# wait until one exits
 wait -n "$INPUT_PID" "$YARN_PID"
 STATUS=$?
 
-# Kill the other one
+# kill the other one
 kill "$INPUT_PID" "$YARN_PID" 2>/dev/null || true
 wait "$INPUT_PID" "$YARN_PID" 2>/dev/null || true
 
-# Treat *any* exit as failure so systemd restarts it
+# handle any failure
 if [ "$STATUS" -eq 0 ]; then
   STATUS=1
 fi
