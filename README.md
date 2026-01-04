@@ -223,12 +223,17 @@ Description=ViLocal
 After=network.target
 Wants=network.target
 
+StartLimitIntervalSec=0
+
 [Service]
 Type=exec
 User=root
 WorkingDirectory=/home/kristian/ViLocal-main
 ExecStart=/home/kristian/ViLocal-main/start.sh /usr/bin/ember-sniff -p tcp://192.168.1.42:6638 -c 19
+
 Restart=on-failure
+RestartSec=5s
+
 KillMode=control-group
 
 [Install]
