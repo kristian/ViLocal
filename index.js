@@ -209,7 +209,8 @@ async function publishDevice(eui, type, id, options) {
         // also expose the individual values as sensors
         ...discoveryComponent('heating_setpoint', 'sensor', {
           name: 'Heating Setpoint', // will automatically get prefixed with the device name
-    
+
+          icon: 'mdi:thermometer-plus',
           device_class: 'temperature',
           unit_of_measurement: '°C',
           suggested_display_precision: 1,
@@ -219,7 +220,7 @@ async function publishDevice(eui, type, id, options) {
         }),
         ...discoveryComponent('temperature', 'sensor', {
           name: 'Temperature', // will automatically get prefixed with the device name
-    
+
           device_class: 'temperature',
           unit_of_measurement: '°C',
           suggested_display_precision: 1,
@@ -229,15 +230,23 @@ async function publishDevice(eui, type, id, options) {
         }),
         ...discoveryComponent('window_open', 'binary_sensor', {
           name: 'Window Open', // will automatically get prefixed with the device name
-    
+
           device_class: 'window',
           state_topic: `${deviceTopic}/0x0201/0x4000`, // Thermostat / Manufacturer Specific (OpenWindowDetection)
           value_template: '{{ "ON" if (value | int) == 3 else "OFF" }}'
+        }),
+        ...discoveryComponent('heating_demand', 'sensor', {
+          name: 'Heating Demand', // will automatically get prefixed with the device name
+
+          icon: 'mdi:thermometer-lines',
+          state_topic: `${deviceTopic}/0x0201/0x0008`, // Thermostat / PI Heating Demand
+          value_template: '{{ value | int }}',
+          state_class: 'measurement'
         })
       } : { // Climate Sensor
         ...discoveryComponent('temperature', 'sensor', {
           name: 'Temperature', // will automatically get prefixed with the device name
-    
+
           device_class: 'temperature',
           unit_of_measurement: '°C',
           suggested_display_precision: 1,
