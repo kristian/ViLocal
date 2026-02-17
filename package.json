@@ -44,5 +44,5 @@
     "smol-toml": "^1.5.2",
     "zbtk": "^2.4.1"
   },
-  "packageManager": "yarn@4.6.0"
+  "packageManager": "yarn@4.12.0"
 }
