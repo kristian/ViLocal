@@ -1,6 +1,6 @@
 {
   "name": "vilocal",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "Local capture of Viessmann ViCare network data to MQTT with Home Assistant device discovery",
   "keywords": [
     "zigbee",
@@ -22,7 +22,7 @@
     "start": "node ./index.js"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "author": {
     "name": "Kristian Kraljic",
@@ -40,9 +40,9 @@
   "license": "Apache-2.0",
   "dependencies": {
     "buffer-to-str": "^1.0.0",
-    "mqtt": "^5.14.1",
-    "smol-toml": "^1.5.2",
-    "zbtk": "^2.4.1"
+    "mqtt": "^5.15.1",
+    "smol-toml": "^1.7.0",
+    "zbtk": "^2.5.0"
   },
-  "packageManager": "yarn@4.12.0"
+  "packageManager": "yarn@4.17.0"
 }
