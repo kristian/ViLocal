@@ -5,6 +5,9 @@
 > [!IMPORTANT]
 > Neither this project, nor its author(s) have any affiliation with Viessmann (Group GmbH & Co. KG), ViCare, its products, or subsidiaries in any way, shape, or form. The projects efforts have been solely achieved through reverse engineering and by making use of the public / open source ZigBee specification. Whilst the goal of this project was, to provide local access to ViCare networks without interfering with the inner workings of the ViCare system, no warranty or guarantee can be given or provided. Use this project entirely at your own risk. There is no financial or commercial interest behind this work.
 
+> [!TIP]
+> ViLocal is also available as a [**Home Assistant App Version**, feel free to check it out](https://github.com/kristian/ViLocal-ha_app)!
+
 > [!NOTE]
 > This project is based on the open-source [ZigBee Toolkit for Node.js](https://www.npmjs.com/package/zbtk).
 
