@@ -2,6 +2,10 @@
 
 This file documents all *major & minor* releases. For revisions, please consult the [commit history](https://github.com/kristian/ViLocal/commits/main).
 
+## [2.2] - 2026-07-01
+
+Add reference to Home Assistant app to README.md and bump dependencies with a new minimum Node.js version of 22.
+
 ## [2.1] - 2026-02-17
 
 Add heating demand value to thermostat entities. The thermostats will indicate if there is a heating demand. "0" meaning off / no heating demand and "7" meaning maximum heating demand. This is a direct reading from the "PI Heating Demand" value of the thermostat, which is taken from the internal feedback loop. So the value does not necessarily correspond to the actual heating output / valve position of the thermostat, but rather a indication that the thermostat is noticing more heating is necessary to reach the set target temperature. Note, in the ViCare app, this value is used to indicate the little "red bubbles" for the thermostats.
