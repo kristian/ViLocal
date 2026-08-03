@@ -2,6 +2,10 @@
 
 This file documents all *major & minor* releases. For revisions, please consult the [commit history](https://github.com/kristian/ViLocal/commits/main).
 
+## [2.3] - 2026-08-03
+
+Bump `zbtk` to 2.6.0 to fix publishing of unsafe EUI to address table.
+
 ## [2.2] - 2026-07-01
 
 Add reference to Home Assistant app to README.md and bump dependencies with a new minimum Node.js version of 22.
