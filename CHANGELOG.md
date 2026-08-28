@@ -4,7 +4,7 @@ This file documents all *major & minor* releases. For revisions, please consult 
 
 ## [2.3] - 2026-08-03
 
-Bump `zbtk` to 2.6.0 to fix publishing of unsafe EUI to address table.
+Bump `zbtk` to 2.6 to fix publishing of unsafe EUI to address table.
 
 ## [2.2] - 2026-07-01
 
