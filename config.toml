@@ -20,6 +20,10 @@ network_key = "1234567890abcedf1234567890abcedf"
 # if set to true, devices that are not present in the 'thermostat' or 'climate_sensor' sections will be published with generic device names. a warning will be printed to the logs
 publish_unknown_devices = true
 
+# whether to retain the state of all thermostats / climate sensors, defaults to false
+# by default, neither ViLocal nor your MQTT broker will retain the state of the devices, which means that after a restart of your MQTT broker, re-publishing the state of all device attribute might take up to 24 hours, depending on how often the information is sent / captured by ViLocal
+retain_state = false
+
 [mqtt]
 
 # broker protocol / host / port

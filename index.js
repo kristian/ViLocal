@@ -321,7 +321,8 @@ const capEmitter = await processCap(config.named_pipe ?? stdin, {
     log: [config.log_level ?? 'warn'].flat(),
     mqtt: {
       client: mqttClient,
-      topic: mqttTopic
+      topic: mqttTopic,
+      retain: config.retain_state ?? false
     }
   }
 });
