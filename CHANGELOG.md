@@ -6,6 +6,8 @@ This file documents all *major & minor* releases. For revisions, please consult 
 
 Add `retain_state` option to configuration, which allows to retain the state of all thermostats / climate sensors in the MQTT broker. By default, neither ViLocal nor your MQTT broker will retain the state of the devices, which means that after a restart of your MQTT broker, re-publishing the state of all device attribute might take up to 24 hours, depending on how often the information is sent / captured by ViLocal.
 
+Add support for `ZBTK_PARSE_FILTER_DST_PAN` environment variable, which allows to filter out all packets that are not destined for the configured PAN ID. This is useful if you have multiple ZigBee networks in range, and want to filter out all packets that are not destined for your configured PAN ID.
+
 ## [2.3] - 2026-08-03
 
 Bump `zbtk` to 2.6 to fix publishing of unsafe EUI to address table.
