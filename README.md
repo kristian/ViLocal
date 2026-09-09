@@ -32,6 +32,9 @@ Currently this mechanism is **read-only**, meaning you will be able to monitor /
 
 This guide describes how to set-up ViLocal using a Raspberry Pi and a Home Assistant OS installation. Due to the open and widely adopted nature of MQTT, a similar set-up on any other hardware, a VM or similar should be possible.
 
+> [!TIP]
+> Please also find a [practical guide in German](https://github.com/kristian/ViLocal/wiki/Praxisleitfaden-(Deutsch)) or [English](https://github.com/kristian/ViLocal/wiki/Practical-Guide-(English)), on how to set-up ViLocal from scratch from an end-user's perspective, on the Wiki of this repository.
+
 ### 1. Set-up your Hardware for ZigBee Sniffing
 
 The first step is to set-up your ZigBee sniffing hardware. This set-up is done on a clean Raspberry Pi with Raspberry Pi OS Lite (aka Raspbian w/o a desktop environment), however as mentioned beforehand, it should work on similar hardware / VMs as well.
