@@ -2,6 +2,10 @@
 
 This file documents all *major & minor* releases. For revisions, please consult the [commit history](https://github.com/kristian/ViLocal/commits/main).
 
+## [3.0] - 2026-11-19
+
+Bump dependencies and Yarn to latest versions.
+
 ## [2.5] - 2026-09-15
 
 Add action to climate control for thermostats. Set minimum and maximum temperature limits, as well as the temperature unit for climate controls.
