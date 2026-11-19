@@ -47,7 +47,7 @@ else
   die 'neither local_config.toml nor config.toml found'
 fi
 
-# The launcher only needs two scalar values from the root of the TOML file.
+# Read scalar settings from the root of the TOML file.
 config_value() {
   sed -nE "/^[[:space:]]*\[/q; s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*(.*)$/\1/p" "$CONFIG_FILE"
 }
@@ -77,6 +77,10 @@ else
   REDIRECT_STDOUT=false
   COMMAND_FIFO="$(quoted_path "$PASS_THROUGH")" && [[ -n "$COMMAND_FIFO" ]] ||
     die "pass_through_commands must be true, false or a quoted FIFO path in $CONFIG_FILE"
+fi
+
+if $SHARED && [[ ! "$(config_value optimistic_climate_control)" =~ ^true[[:space:]]*(#.*)?$ ]]; then
+  echo "Warning: Shared-adapter mode pauses capture during writes. It is recommended to set optimistic_climate_control = true in $CONFIG_FILE to show requested setpoints immediately in Home Assistant." >&2
 fi
 
 PIDS=()

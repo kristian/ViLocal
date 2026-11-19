@@ -194,10 +194,10 @@ async function publishDevice(eui, type, id, options) {
           min_temp: 8.0, // taken from ViCare app
           max_temp: 30.0, // taken from ViCare app
           temperature_unit: 'C', // ZigBee works in Celsius, XXX: support for Fahrenheit needs a conversion / feature
-          optimistic: false,
+          optimistic: !!config.optimistic_climate_control,
           precision: 0.1,
 
-          // use an arbitrary existing topic (the availability topic is always retained) to disable optimistic mode ...
+          // use an existing retained topic to publish the fixed climate control mode
           mode_state_topic: config.mqtt.online ? mqttAvailabilityTopic : '$SYS/broker/version',
           mode_state_template: 'auto', // ... as state of thermostats is always auto (they will turn on if needed)
 
