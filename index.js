@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-import { env, stdin } from 'node:process';
+import { env, stdin, stdout } from 'node:process';
+import { createWriteStream } from 'node:fs';
 env.ZBTK_FORMAT_EUI_SEPARATOR = '-'; // like Viessmann uses it for their devices
 
 import fs from 'node:fs/promises';
@@ -20,7 +21,7 @@ import { parse as parseToml } from 'smol-toml';
 import { toFormat as bufferFormat } from 'buffer-to-str';
 
 import { connectAsync as mqttConnect } from 'mqtt';
-import { process as processCap } from 'zbtk/cap';
+import { process as processCap, addressTable } from 'zbtk/cap';
 import { pk } from 'zbtk/crypto';
 import { fromHex } from 'zbtk/utils';
 import { eui as formatEui } from 'zbtk/format';
@@ -210,7 +211,9 @@ async function publishDevice(eui, type, id, options) {
             current_temperature_template: '{{ (value | float ) / 100 | round(2) }}',
             current_humidity_topic: `${mqttTopic}/${formatEui(options.climate_sensor_serial_no)}/0x0405/0x0000`,
             current_humidity_template: '{{ (value | float ) / 100 | round(2) }}',
-          })
+          }),
+
+          temperature_command_topic: `${deviceTopic}/0x0201/0x0012/set`, // Thermostat / Occupied Heating Setpoint
         }),
         // also expose the individual values as sensors
         ...discoveryComponent('heating_setpoint', 'sensor', {
@@ -310,10 +313,25 @@ async function publishDevice(eui, type, id, options) {
     JSON.stringify(discovery), { retain: true });
 }
 
-// register devices
 await iterateDevices(async (type, id, options) => {
   await publishDevice(fromHex(options.serial_no), type, id, options);
 });
+
+// handle pass-through commands if enabled
+if (config.pass_through_commands ?? true) {
+  const passThroughOutput = typeof config.pass_through_commands === 'string' ?
+    createWriteStream(config.pass_through_commands) : stdout;
+
+  await mqttClient.subscribeAsync(`${mqttTopic}/+/+/+/set`); // device EUI / cluster / attribute / set
+  mqttClient.on('message', async (topic, message, packet) => {
+    const [formattedEui, cluster, attribute] = topic.substring(mqttTopic.length + 1).split('/'),
+      eui = fromHex(formattedEui, /* reverse=*/true), addr = Object.entries(addressTable).find(([, value]) => Buffer.compare(value, eui) === 0)?.[0];
+    passThroughOutput.write(JSON.stringify({
+      eui: formattedEui, addr: addr ? fromHex(addr, /* reverse=*/true).readUInt16BE(0) : undefined,
+      cluster, attribute, payload: message.toString(), topic
+    }) + '\n');
+  });
+}
 
 // set the pre-configured network key
 config.network_key && pk(config.network_key);
