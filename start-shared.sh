@@ -1,13 +1,25 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+VERBOSE=false
+if [[ "${1:-}" == --verbose || "${1:-}" == -v ]]; then
+  VERBOSE=true
+  shift
+fi
+
+verbose() {
+  if $VERBOSE; then
+    printf 'Verbose [start-shared.sh %(%T)T] %s\n' -1 "$*" >&2
+  fi
+}
+
 writer=()
 while (($#)) && [[ $1 != -- ]]; do
   writer+=("$1")
   shift
 done
 if ((${#writer[@]} == 0 || $# < 2)); then
-  echo "Usage: start-shared.sh WRITER [ARGS...] -- CAPTURE [ARGS...]" >&2
+  echo "Usage: start-shared.sh [-v|--verbose] WRITER [ARGS...] -- CAPTURE [ARGS...]" >&2
   exit 1
 fi
 shift
@@ -28,6 +40,7 @@ command_file="$work_dir/command"
 capture_pid=
 relay_pid=
 writer_pid=
+write_timeout=30s
 
 # Stop the whole process group before giving the adapter to the next command.
 stop_group() {
@@ -84,6 +97,7 @@ start_capture() {
   # If writes queue up, do not stop a session before both FIFO ends open.
   for ((i = 0; i < 100; i++)); do
     if [[ -f $ready_file ]]; then
+      verbose "Capture FIFO connected (capture PID $capture_pid, relay PID $relay_pid)"
       return 0
     fi
     check_capture
@@ -111,20 +125,30 @@ write_command() {
   fi
 
   check_capture
+  verbose "Command received; stopping capture (PID $capture_pid)"
   stop_group "$capture_pid"
+  verbose 'Capture stopped; waiting for its relay to drain'
   capture_pid=
   wait "$relay_pid"
   relay_pid=
 
   printf '%s%s' "$line" "$newline" > "$command_file"
-  setsid -- timeout --kill-after=5s 90s "${writer[@]}" < "$command_file" >&2 &
+  local -a write_cmd=(setsid -- timeout --kill-after=5s "$write_timeout" "${writer[@]}")
+  if $VERBOSE; then
+    "${write_cmd[@]}" < "$command_file" >&2 &
+  else
+    "${write_cmd[@]}" < "$command_file" >/dev/null &
+  fi
   writer_pid=$!
+  verbose "Writer started (PID $writer_pid); waiting up to $write_timeout for it to exit"
   wait "$writer_pid" || status=$?
   writer_pid=
+  verbose "Writer exited with status $status"
   if ((status != 0)); then
     echo "Warning: write command exited with status $status; restarting capture" >&2
   fi
 
+  verbose 'Restarting capture'
   start_capture
 }
 

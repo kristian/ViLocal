@@ -2,7 +2,7 @@
 set -euo pipefail
 
 usage() {
-  echo 'Usage: start.sh CAPTURE [ARGS...] or start.sh [--shared-adapter] --forward WRITER [ARGS...] -- CAPTURE [ARGS...]'
+  echo 'Usage: start.sh [-v|--verbose] CAPTURE [ARGS...] or start.sh [-v|--verbose] [--shared-adapter] --forward WRITER [ARGS...] -- CAPTURE [ARGS...]'
 }
 
 die() {
@@ -15,11 +15,22 @@ if [[ $# -eq 1 && ( "$1" == --help || "$1" == -h ) ]]; then
   exit
 fi
 
+VERBOSE=false
 SHARED=false
-if [[ "${1:-}" == --shared-adapter ]]; then
-  SHARED=true
+while [[ "${1:-}" == --verbose || "${1:-}" == -v || "${1:-}" == --shared-adapter ]]; do
+  if [[ "$1" == --verbose || "$1" == -v ]]; then
+    VERBOSE=true
+  else
+    SHARED=true
+  fi
   shift
-fi
+done
+
+verbose() {
+  if $VERBOSE; then
+    printf 'Verbose [start.sh %(%T)T] %s\n' -1 "$*" >&2
+  fi
+}
 
 FORWARD_CMD=()
 if [[ "${1:-}" == --forward ]]; then
@@ -130,15 +141,26 @@ if [[ -n "$COMMAND_FIFO" ]]; then
   [[ ! "$FIFO" -ef "$COMMAND_FIFO" ]] || die 'capture and command FIFOs must be different'
 fi
 
+verbose "Config: $CONFIG_FILE; shared adapter: $SHARED"
 if $SHARED; then
-  setsid bash "$(dirname "$0")/start-shared.sh" "${FORWARD_CMD[@]}" -- "${PIPE_CMD[@]}" < "$COMMAND_FIFO" > "$FIFO" &
+  SHARED_ARGS=()
+  if $VERBOSE; then
+    SHARED_ARGS+=(--verbose)
+  fi
+  setsid bash "$(dirname "$0")/start-shared.sh" "${SHARED_ARGS[@]}" "${FORWARD_CMD[@]}" -- "${PIPE_CMD[@]}" < "$COMMAND_FIFO" > "$FIFO" &
+  verbose "Shared-adapter helper started (PID $!)"
   PIDS+=("$!")
 else
   setsid "${PIPE_CMD[@]}" > "$FIFO" &
   PIDS+=("$!")
+  verbose "Capture process started (PID $!)"
 
   if [[ ${#FORWARD_CMD[@]} -gt 0 ]]; then
-    setsid "${FORWARD_CMD[@]}" < "$COMMAND_FIFO" >&2 &
+    if $VERBOSE; then
+      setsid "${FORWARD_CMD[@]}" < "$COMMAND_FIFO" >&2 &
+    else
+      setsid "${FORWARD_CMD[@]}" < "$COMMAND_FIFO" >/dev/null &
+    fi
     PIDS+=("$!")
   elif [[ -n "$COMMAND_FIFO" ]]; then
     setsid cat -- "$COMMAND_FIFO" &
@@ -155,6 +177,7 @@ PIDS+=("$!")
 
 STATUS=0
 wait -n "${PIDS[@]}" || STATUS=$?
+verbose "A launcher process exited with status $STATUS; cleaning up"
 if [[ "$STATUS" -eq 0 ]]; then
   STATUS=1
 fi
