@@ -23,7 +23,7 @@ import { toFormat as bufferFormat } from 'buffer-to-str';
 import { connectAsync as mqttConnect } from 'mqtt';
 import { process as processCap, addressTable } from 'zbtk/cap';
 import { pk } from 'zbtk/crypto';
-import { fromHex } from 'zbtk/utils';
+import { fromHex, toHex } from 'zbtk/utils';
 import { eui as formatEui } from 'zbtk/format';
 import packageJson from './package.json' with { type: 'json' };
 
@@ -322,14 +322,68 @@ if (config.pass_through_commands ?? true) {
   const passThroughOutput = typeof config.pass_through_commands === 'string' ?
     createWriteStream(config.pass_through_commands) : stdout;
 
+  let formatPathThroughMessage;
+  switch (config.pass_through_format ?? 'json') {
+    case 'json':
+      formatPathThroughMessage = message => JSON.stringify({
+        ...message,
+        eui: message.formattedEui,
+        formattedEui: undefined,
+        addr: message.addr ? toHex(message.addr) : undefined
+      });
+      break;
+    case 'ember-router':
+      let emberRouterSeqNo = 0;
+      formatPathThroughMessage = message => {
+        if (!message.addr) {
+          console.warn(`Command message for device with EUI ${message.formattedEui} cannot be passed-through to ember-router because the NWK address is missing in the address table. In case the device exists the address table will update automatically.`);
+          return null; // messages without an address cannot be forwarded to ember-router
+        }
+
+        let dataType, payloadBytes;
+        const clusterId = fromHex(message.cluster).readUInt16BE(0),
+          attributeId = fromHex(message.attribute).readUInt16BE(0);
+        switch (true) {
+          case clusterId === 0x0201 && attributeId === 0x0012: // Thermostat Cluster, Occupied Heating Setpoint
+            dataType = 0x29; // signed 16-bit integer
+            
+            // convert string to float and float to hundredths of a degree as bytes, e.g. !17.5" gets converted to 1750 in bytes
+            payloadBytes = Buffer.alloc(2);
+            payloadBytes.writeInt16LE(Math.round(parseFloat(message.payload) * 100), 0);
+            break;
+          default:
+            console.warn(`Unsupported cluster ${message.cluster} and / or attribute ${message.attribute} to pass-through to ember-router`);
+            return null; // only supported attributes can be forwarded to ember-router
+        }
+
+        return JSON.stringify({
+          destination: message.addr.readUInt16BE(0),
+          destinationEndpoint: 1,
+          profileId: 260, // Zigbee Home Automation (HA) profile ID
+          clusterId: fromHex(message.cluster).readUInt16BE(0),
+          payload: Buffer.from([
+            0x10, // ZCL frame control
+            ++emberRouterSeqNo & 0xFF, // sequence number (incremented for each message),
+            0x02, // ZCL Write Attribute Command
+            attributeId & 0xFF, // high byte of attribute ID
+            attributeId >> 8 & 0xFF, // low byte of attribute ID
+            dataType, // ZCL data type
+            ...payloadBytes
+          ]).toString('hex')
+        });
+      };
+      break;
+    default:
+      throw new Error(`Unsupported pass_through_format: ${config.pass_through_format}`);
+  }
+
   await mqttClient.subscribeAsync(`${mqttTopic}/+/+/+/set`); // device EUI / cluster / attribute / set
   mqttClient.on('message', async (topic, message, packet) => {
     const [formattedEui, cluster, attribute] = topic.substring(mqttTopic.length + 1).split('/'),
       eui = fromHex(formattedEui, /* reverse=*/true), addr = Object.entries(addressTable).find(([, value]) => Buffer.compare(value, eui) === 0)?.[0];
-    passThroughOutput.write(JSON.stringify({
-      eui: formattedEui, addr: addr ? fromHex(addr, /* reverse=*/true).readUInt16BE(0) : undefined,
-      cluster, attribute, payload: message.toString(), topic
-    }) + '\n');
+    (message => message && passThroughOutput.write(message + '\n'))(formatPathThroughMessage({
+      eui, formattedEui, addr: addr ? fromHex(addr, /* reverse=*/true) : undefined, cluster, attribute, payload: message.toString(), topic
+    }));
   });
 }
 

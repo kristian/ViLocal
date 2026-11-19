@@ -27,6 +27,8 @@ retain_state = false
 # wether to pass through commands received via updates to the command topics published to MQTT device discovery
 # if set to true, a JSON representation of the command will be emitted through stdout. can be set to a string representing a named pipe instead
 pass_through_commands = true
+# format of the pass through output, one of "json", "ember-router", the latter being a JSON format the ember-router can forward to an ember-router 1:1
+pass_through_format = "json"
 
 [mqtt]
 
