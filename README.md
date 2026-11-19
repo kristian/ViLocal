@@ -371,7 +371,13 @@ Use `--shared-adapter` with `--forward` and pass the **same adapter address** to
 
 ViLocal and its MQTT connection stay up during the switch. Shared mode is experimental. Test repeated switches on your adapter and firmware to confirm capture resumes and the saved network remains usable.
 
-Capture pauses during writes on a shared adapter, so ViLocal may miss both the write and the thermostat's response. Use a later captured attribute report to confirm the setpoint. The writer's delivery status alone does not confirm the thermostat applied it.
+As capture / sniffing pauses during writes on a shared adapter, ViLocal may miss both the write and the thermostat's response. For the shared setup it is recommended to enable the `optimistic_climate_control` configuration, which allows the Home Assistant climate entity to immediately reflect the requested setpoint without waiting for the thermostat's report.
+
+```toml
+optimistic_climate_control = true
+```
+
+Restart ViLocal to republish the Home Assistant discovery configuration. A later captured setpoint report can still correct the display. ViLocal's MQTT state topic and separate heating setpoint sensor continue to reflect captured values. A displayed request is an assumption until the thermostat reports its setpoint. [See Home Assistant MQTT climate documentation](https://www.home-assistant.io/integrations/climate.mqtt/#optimistic-mode) for details on optimistic mode.
 
 ## Author
 
