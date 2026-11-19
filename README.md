@@ -351,7 +351,7 @@ With two adapters, pipe `start.sh` directly to `ember-router write`. The sniffer
   ember-router write -p tcp://192.168.1.43:6638
 ```
 
-Use `--forward` if you want `start.sh` to start and supervise the writer alongside ViLocal and the sniffer. Both forms forward the same commands:
+Use `--forward` if you want `start.sh` to start and supervise the writer alongside ViLocal and the sniffer. Both forms forward the same commands. Add `--verbose` (or `-v`) before `--forward` to see the capture handoff and any packet replies from the writer on stderr.
 
 ```bash
 ./start.sh --forward ember-router write -p tcp://192.168.1.43:6638 -- \
@@ -362,12 +362,14 @@ Use `--forward` if you want `start.sh` to start and supervise the writer alongsi
 
 A single Ember adapter can do both jobs by switching modes. During normal monitoring, `ember-sniff` has exclusive access to the adapter and feeds captured traffic to ViLocal. When ViLocal emits a write command, `start.sh` stops the sniffer and waits for it to release the adapter. It then runs `ember-router write`, which resumes the saved network, sends the queued command, and exits. The launcher restarts the sniffer even if the write fails.
 
-Use `--shared-adapter` with `--forward` and pass the **same adapter address** to both commands. Shared mode requires `timeout` with `-k` support.
+Use `--shared-adapter` with `--forward` and pass the **same adapter address** to both commands. Shared mode requires `timeout` with `-k` support. Add `--verbose` (or `-v`) before `--forward` to see the capture handoff and any packet replies from the writer on stderr.
 
 ```bash
 ./start.sh --shared-adapter --forward ember-router write -p tcp://192.168.1.42:6638 -- \
   /usr/bin/ember-sniff -p tcp://192.168.1.42:6638 -c 19
 ```
+
+Important Note: Use `ember-router write` as shown above. Ember Router's default `run` mode stays open after stdin closes, which delays capture restart until the writer times out!
 
 ViLocal and its MQTT connection stay up during the switch. Shared mode is experimental. Test repeated switches on your adapter and firmware to confirm capture resumes and the saved network remains usable.
 
