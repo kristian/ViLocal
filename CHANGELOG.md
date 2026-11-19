@@ -4,7 +4,10 @@ This file documents all *major & minor* releases. For revisions, please consult 
 
 ## [3.0] - 2026-11-19
 
-Bump dependencies and Yarn to latest versions.
+> [!NOTE]
+> This major release introduces support for controlling thermostats. In case you are already using an EmberZNet based adapter for capturing ZigBee traffic, the same adapter can be used for controlling your thermostats as well, following the set-up instructions in the documentation. Using a dedicated adapter for control is possible and recommended for more reliable operation. Both operation modes are described in the documentation.
+
+Enable support for controlling climate controls for thermostats through ember-router. Bump dependencies and Yarn to latest versions.
 
 ## [2.5] - 2026-09-15
 

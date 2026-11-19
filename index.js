@@ -325,10 +325,10 @@ if (config.pass_through_commands ?? true) {
   const passThroughOutput = typeof config.pass_through_commands === 'string' ?
     createWriteStream(config.pass_through_commands) : stdout;
 
-  let formatPathThroughMessage;
+  let formatPassThroughMessage;
   switch (config.pass_through_format ?? 'json') {
     case 'json':
-      formatPathThroughMessage = message => JSON.stringify({
+      formatPassThroughMessage = message => JSON.stringify({
         ...message,
         eui: message.formattedEui,
         formattedEui: undefined,
@@ -337,7 +337,7 @@ if (config.pass_through_commands ?? true) {
       break;
     case 'ember-router':
       let emberRouterSeqNo = 0;
-      formatPathThroughMessage = message => {
+      formatPassThroughMessage = message => {
         if (!message.addr) {
           console.warn(`Command message for device with EUI ${message.formattedEui} cannot be passed-through to ember-router because the NWK address is missing in the address table. In case the device exists the address table will update automatically.`);
           return null; // messages without an address cannot be forwarded to ember-router
@@ -384,7 +384,7 @@ if (config.pass_through_commands ?? true) {
   mqttClient.on('message', async (topic, message, packet) => {
     const [formattedEui, cluster, attribute] = topic.substring(mqttTopic.length + 1).split('/'),
       eui = fromHex(formattedEui, /* reverse=*/true), addr = Object.entries(addressTable).find(([, value]) => Buffer.compare(value, eui) === 0)?.[0];
-    (message => message && passThroughOutput.write(message + '\n'))(formatPathThroughMessage({
+    (message => message && passThroughOutput.write(message + '\n'))(formatPassThroughMessage({
       eui, formattedEui, addr: addr ? fromHex(addr, /* reverse=*/true) : undefined, cluster, attribute, payload: message.toString(), topic
     }));
   });
