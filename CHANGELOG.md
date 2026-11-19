@@ -4,7 +4,7 @@ This file documents all *major & minor* releases. For revisions, please consult 
 
 ## [2.5] - 2026-09-15
 
-Add action to climate control for thermostats.
+Add action to climate control for thermostats. Set minimum and maximum temperature limits, as well as the temperature unit for climate controls.
 
 ## [2.4] - 2026-08-30
 

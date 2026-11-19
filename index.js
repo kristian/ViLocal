@@ -187,6 +187,9 @@ async function publishDevice(eui, type, id, options) {
           swing_modes: [],
           fan_modes: [],
           temp_step: 0.5,
+          min_temp: 8.0, // taken from ViCare app
+          max_temp: 30.0, // taken from ViCare app
+          temperature_unit: 'C', // ZigBee works in Celsius, XXX: support for Fahrenheit needs a conversion / feature
           optimistic: false,
           precision: 0.1,
 
