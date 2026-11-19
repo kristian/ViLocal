@@ -27,6 +27,9 @@ import { fromHex, toHex } from 'zbtk/utils';
 import { eui as formatEui } from 'zbtk/format';
 import packageJson from './package.json' with { type: 'json' };
 
+// zbtk uses console.log for capture diagnostics. Reserve stdout for pass-through commands.
+console.log = console.info = console.debug = console.error;
+
 const TYPE_THERMOSTAT = 'thermostat', TYPE_CLIMATE_SENSOR = 'climate_sensor';
 
 const configFile = (await exists('local_config.toml')) ? 'local_config.toml' : 'config.toml';
