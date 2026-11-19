@@ -19,14 +19,14 @@ Due to the [zero-install](https://yarnpkg.com/features/caching#zero-installs) ap
 
 ### How does ViLocal work?
 
-ViLocal utilizes the [ZigBee Toolkit for Node.js](https://www.npmjs.com/package/zbtk) and a technique widely known as "ZigBee Sniffing" to capture any communication between the ViCare devices and the ViCare bridge / coordinator Vitoconnect. The downside being that specialized hardware (see [tested devices](https://github.com/kristian/zbtk/blob/main/docs/tested-capture-devices.md) of the ZigBee Toolkit) is required, in order to be able to sniff into the Viessmann ZigBee network. However, the major upside of this approach is, that it is *completely non-intrusive*, meaning, ViLocal doesn't interfere with any of the internal workings of your ViCare / Viessmann network and that is fully local / requires no connectivity to the internet or Viessmann's APIs. No component in the existing network even "knowns" that ViLocal is listening.
+ViLocal utilizes the [ZigBee Toolkit for Node.js](https://www.npmjs.com/package/zbtk) and a technique widely known as "ZigBee Sniffing" to capture any communication between the ViCare devices and the ViCare bridge / coordinator Vitoconnect. The downside being that specialized hardware (see [tested devices](https://github.com/kristian/zbtk/blob/main/docs/tested-capture-devices.md) of the ZigBee Toolkit) is required, in order to be able to sniff into the Viessmann ZigBee network. However, the major upside of this approach is, that it is *completely non-intrusive*, meaning, ViLocal doesn't interfere with any of the internal workings of your ViCare / Viessmann network and that is fully local / requires no connectivity to the internet or Viessmann's APIs. Passive capture is invisible to devices on the network.
 
 Any captured attributes are then sent to your local (or remote, heck...) MQTT Broker and can be consumed by any home automation software, like Home Assistant. ViLocal implements the [MQTT (Device) Discovery](https://www.home-assistant.io/integrations/mqtt/#mqtt-discovery) protocol, to expose any found and / or configured thermostats and climate sensors automatically. If configured with the Home Assistant MQTT integration, Home Assistant will automatically pick up all found devices and create sensors / entities for them.
 
 > [!NOTE]
 > Whilst only certain attributes are being visualized through the device discovery feature, all parameters read from, written to, or reported by your devices will be published via MQTT. This includes all hidden / vendor-specific attributes of our Viessmann ViCare devices.
 
-Currently this mechanism is **read-only**, meaning you will be able to monitor / get statistics of your thermostats and climate sensors. Changing the thermostat values / valves, e.g. by setting the desired target temperature is not (yet) possible.
+ViLocal uses passive capture to monitor thermostats and climate sensors. To change a thermostat setpoint, you can opt into [forwarding commands to a Zigbee router](#5-optional-enable-thermostat-writes).
 
 ## Set-Up / Installation
 
@@ -160,7 +160,7 @@ cd ViLocal-main
 nano config.toml
 ```
 
-In case you used a `git clone`, it might be more favorable for you to copy the configuration file to a `local-config.toml`, to avoid any merge conflicts when upgrading ViLocal in future.
+In case you used a `git clone`, it might be more favorable for you to copy the configuration file to a `local_config.toml`, to avoid any merge conflicts when upgrading ViLocal in future.
 
 Now change the following options:
 
@@ -278,6 +278,100 @@ sudo systemctl enable vilocal.service
 ```
 
 Congratulations! You just set-up a fully local integration of your ViCare thermostats and climate sensors into Home Assistant!
+
+### 5. Optional: Enable Thermostat Writes
+
+Use [Ember Router](https://github.com/kristian/ember-router) to send heating setpoint commands from MQTT to the ViCare network. ViLocal still reads attributes from sniffed traffic. You can use separate adapters or share one Ember adapter by alternating between capture and writes.
+
+#### Set Up Ember Router
+
+Install `ember-router` and have `zbtk` available from the capture setup. The writing adapter needs EmberZNet coordinator (NCP) firmware so Ember Router can operate it as a Zigbee router. For a shared setup, pair the adapter you will also use for sniffing. Stop any process using that adapter before pairing. If it already has saved router membership on the target network, skip to the optional check in step 5.
+
+```bash
+npm install -g ember-router
+ADAPTER=tcp://192.168.1.43:6638
+```
+
+Replace `ADAPTER` with your adapter's TCP address or serial port. Run the following steps in the same shell so the variables are available throughout setup.
+
+1. Generate a random install code with a valid checksum. Keep the printed code for the ViCare app.
+
+   ```bash
+   INSTALL_CODE=$(zbtk ic generate)
+   printf '%s\n' "$INSTALL_CODE"
+   ```
+
+2. Derive the link key from the full install code, including its checksum.
+
+   ```bash
+   LINK_KEY=$(zbtk ic link "$INSTALL_CODE")
+   ```
+
+3. For a fresh setup, reset the adapter and copy the EUI64 shown in the terminal without its `0x` prefix. `reset --yes` erases saved network membership and NVM3 tokens.
+
+   ```bash
+   ember-router reset -p "$ADAPTER" --yes
+   ```
+
+4. In the ViCare app, go to **Einstellungen → Komponenten hinzufügen → ViCare Smart Climate Komponente** and select **ViCare Repeater (Unterputz)**. Enter the adapter's EUI64 and the install code from step 1.
+
+5. When the app asks you to press the pairing button, start the join using the derived link key.
+
+   ```bash
+   ember-router join -v -p "$ADAPTER" -l "$LINK_KEY" \
+     -m UBISYS_TECHNOLOGIES_GMBH --answer-interview
+   ```
+
+   The join command can exit before ViCare finishes adding the repeater. Wait for the app to complete setup before using the adapter again.
+
+   **Optional check:** Run `ember-router -p "$ADAPTER"` to confirm it resumes the saved network. Stop it with Ctrl+C after it reports the resumed network so the launcher can open its own `ember-router write` session.
+
+#### Configure ViLocal
+
+ViLocal learns each thermostat's current Zigbee short address from captured traffic before it can forward a write to that device.
+
+Set the following top-level options in `local_config.toml`, if present, or `config.toml`:
+
+```toml
+named_pipe = "/run/vicare_sniff.fifo"
+pass_through_commands = true
+pass_through_format = "ember-router"
+```
+
+- `named_pipe` is the capture FIFO used by `start.sh`. The launcher uses Bash, `mkfifo`, and `setsid`. For either FIFO option, use a single-quoted literal path or a double-quoted path without escapes.
+- `pass_through_commands` defaults to `true`, which sends commands on ViLocal's stdout. Set it to a separate FIFO path, such as `"/run/vicare_commands.fifo"`, to route commands through that FIFO. The launcher reads the command FIFO exclusively. It can use an existing FIFO and rejects regular files at either path. Set the option to `false` to disable command forwarding.
+- `pass_through_format` determines what ViLocal emits. The launcher relays the output unchanged. Select `"ember-router"` for the examples below.
+
+#### Separate Capture and Write Adapters
+
+With two adapters, pipe `start.sh` directly to `ember-router write`. The sniffer and writer can run continuously. If ViLocal uses a command FIFO, `start.sh` relays it to stdout so the same command works:
+
+```bash
+./start.sh /usr/bin/ember-sniff -p tcp://192.168.1.42:6638 -c 19 |
+  ember-router write -p tcp://192.168.1.43:6638
+```
+
+Use `--forward` if you want `start.sh` to start and supervise the writer alongside ViLocal and the sniffer. Both forms forward the same commands:
+
+```bash
+./start.sh --forward ember-router write -p tcp://192.168.1.43:6638 -- \
+  /usr/bin/ember-sniff -p tcp://192.168.1.42:6638 -c 19
+```
+
+#### Shared Capture and Write Adapter
+
+A single Ember adapter can do both jobs by switching modes. During normal monitoring, `ember-sniff` has exclusive access to the adapter and feeds captured traffic to ViLocal. When ViLocal emits a write command, `start.sh` stops the sniffer and waits for it to release the adapter. It then runs `ember-router write`, which resumes the saved network, sends the queued command, and exits. The launcher restarts the sniffer even if the write fails.
+
+Use `--shared-adapter` with `--forward` and pass the **same adapter address** to both commands. This mode also requires GNU `timeout`.
+
+```bash
+./start.sh --shared-adapter --forward ember-router write -p tcp://192.168.1.42:6638 -- \
+  /usr/bin/ember-sniff -p tcp://192.168.1.42:6638 -c 19
+```
+
+ViLocal and its MQTT connection stay up during the switch. Shared mode is experimental. Test repeated switches on your adapter and firmware to confirm capture resumes and the saved network remains usable.
+
+Capture pauses during writes on a shared adapter, so ViLocal may miss both the write and the thermostat's response. Use a later captured attribute report to confirm the setpoint. The writer's delivery status alone does not confirm the thermostat applied it.
 
 ## Author
 
