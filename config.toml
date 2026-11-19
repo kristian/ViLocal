@@ -34,6 +34,9 @@ pass_through_commands = true
 # format of the pass through output, one of "json", "ember-router", the latter being a JSON format the ember-router can forward to an ember-router 1:1
 pass_through_format = "json"
 
+# file storing the ZCL sequence for ember-router writes
+ember_router_sequence_file = ".ember-router-seq"
+
 [mqtt]
 
 # broker protocol / host / port

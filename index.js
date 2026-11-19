@@ -335,8 +335,15 @@ if (config.pass_through_commands ?? true) {
         addr: message.addr ? toHex(message.addr) : undefined
       });
       break;
-    case 'ember-router':
-      let emberRouterSeqNo = 0;
+    case 'ember-router': {
+      // we use a dotfile to keep track of the ZCL sequence number for ember-router commands across restarts of ViLocal, otherwise writes up to the prev. seq. number fail
+      const emberRouterSeqFile = config.ember_router_sequence_file ?? '.ember-router-seq';
+      let emberRouterSeqNo = Number((await fs.readFile(emberRouterSeqFile, 'utf8').catch(error => {
+          error.code !== 'ENOENT' && console.error(`Could not read ${emberRouterSeqFile}: ${error.message}`);
+          return '0';
+        })).trim().match(/^[+-]?\d+(?:\.\d+)?$/)?.[0] ?? '0') & 0xff,
+          emberRouterWriteSeq = Promise.resolve();
+
       formatPassThroughMessage = message => {
         if (!message.addr) {
           console.warn(`Command message for device with EUI ${message.formattedEui} cannot be passed-through to ember-router because the NWK address is missing in the address table. In case the device exists the address table will update automatically.`);
@@ -359,23 +366,30 @@ if (config.pass_through_commands ?? true) {
             return null; // only supported attributes can be forwarded to ember-router
         }
 
+        const payload = Buffer.from([
+          0x10, // ZCL frame control
+          (emberRouterSeqNo = (emberRouterSeqNo + 1) & 0xff), // ZCL transaction sequence number
+          0x02, // ZCL Write Attribute Command
+          attributeId & 0xff, // low byte of attribute ID
+          attributeId >> 8 & 0xff, // high byte of attribute ID
+          dataType, // ZCL data type
+          ...payloadBytes
+        ]).toString('hex');
+
+        emberRouterWriteSeq = emberRouterWriteSeq
+          .then(() => fs.writeFile(emberRouterSeqFile, `${emberRouterSeqNo}\n`, { mode: 0o600 }))
+          .catch(error => console.warn(`Could not write to ${emberRouterSeqFile}: ${error.message}`));
+
         return JSON.stringify({
           destination: message.addr.readUInt16BE(0),
           destinationEndpoint: 1,
           profileId: 260, // Zigbee Home Automation (HA) profile ID
-          clusterId: fromHex(message.cluster).readUInt16BE(0),
-          payload: Buffer.from([
-            0x10, // ZCL frame control
-            ++emberRouterSeqNo & 0xFF, // sequence number (incremented for each message),
-            0x02, // ZCL Write Attribute Command
-            attributeId & 0xFF, // high byte of attribute ID
-            attributeId >> 8 & 0xFF, // low byte of attribute ID
-            dataType, // ZCL data type
-            ...payloadBytes
-          ]).toString('hex')
+          clusterId,
+          payload
         });
       };
       break;
+    }
     default:
       throw new Error(`Unsupported pass_through_format: ${config.pass_through_format}`);
   }

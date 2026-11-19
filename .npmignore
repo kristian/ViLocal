@@ -4,4 +4,5 @@
 .gitattributes
 local_config.toml
 package.tgz
+/.ember-router-seq
 start.sh
