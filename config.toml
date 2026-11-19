@@ -24,6 +24,10 @@ publish_unknown_devices = true
 # by default, neither ViLocal nor your MQTT broker will retain the state of the devices, which means that after a restart of your MQTT broker, re-publishing the state of all device attribute might take up to 24 hours, depending on how often the information is sent / captured by ViLocal
 retain_state = false
 
+# wether to pass through commands received via updates to the command topics published to MQTT device discovery
+# if set to true, a JSON representation of the command will be emitted through stdout. can be set to a string representing a named pipe instead
+pass_through_commands = true
+
 [mqtt]
 
 # broker protocol / host / port
