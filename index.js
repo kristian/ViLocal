@@ -194,6 +194,9 @@ async function publishDevice(eui, type, id, options) {
           mode_state_topic: config.mqtt.online ? mqttAvailabilityTopic : '$SYS/broker/version',
           mode_state_template: 'auto', // ... as state of thermostats is always auto (they will turn on if needed)
 
+          action_topic: `${deviceTopic}/0x0201/0x0008`, // Thermostat / PI Heating Demand
+          action_template: "{{ 'heating' if (value | int(0)) > 0 else 'idle' }}",
+
           temperature_state_topic: `${deviceTopic}/0x0201/0x0012`, // Thermostat / Occupied Heating Setpoint
           temperature_state_template: '{{ (value | float ) / 100 | round(2) }}',
           ...(!options?.climate_sensor_serial_no ? { // thermostats can be associated to a climate sensor for example in the same room

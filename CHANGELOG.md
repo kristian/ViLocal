@@ -2,6 +2,10 @@
 
 This file documents all *major & minor* releases. For revisions, please consult the [commit history](https://github.com/kristian/ViLocal/commits/main).
 
+## [2.5] - 2026-09-15
+
+Add action to climate control for thermostats.
+
 ## [2.4] - 2026-08-30
 
 Add `retain_state` option to configuration, which allows to retain the state of all thermostats / climate sensors in the MQTT broker. By default, neither ViLocal nor your MQTT broker will retain the state of the devices, which means that after a restart of your MQTT broker, re-publishing the state of all device attribute might take up to 24 hours, depending on how often the information is sent / captured by ViLocal.
