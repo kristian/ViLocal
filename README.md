@@ -382,9 +382,11 @@ optimistic_climate_control = true
 
 Restart ViLocal to republish the Home Assistant discovery configuration. A later captured setpoint report can still correct the display. ViLocal's MQTT state topic and separate heating setpoint sensor continue to reflect captured values. A displayed request is an assumption until the thermostat reports its setpoint. [See Home Assistant MQTT climate documentation](https://www.home-assistant.io/integrations/climate.mqtt/#optimistic-mode) for details on optimistic mode.
 
-## Author
+## Author & Supporters
 
 ViLocal by [Kristian Kraljić](https://kra.lc/).
+
+Thanks to **don_kanallie** for the original idea and proof of concept that helped bring thermostat write support to ViLocal.
 
 ## Bugs
 
