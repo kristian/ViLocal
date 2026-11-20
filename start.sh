@@ -141,13 +141,25 @@ if [[ -n "$COMMAND_FIFO" ]]; then
   [[ ! "$FIFO" -ef "$COMMAND_FIFO" ]] || die 'capture and command FIFOs must be different'
 fi
 
+start_vilocal() {
+  if [[ ${#FORWARD_CMD[@]} -gt 0 ]] && $REDIRECT_STDOUT; then
+    setsid "$@" > "$COMMAND_FIFO" &
+  else
+    setsid "$@" &
+  fi
+  VILOCAL_PID=$!
+  PIDS+=("$VILOCAL_PID")
+}
+
 verbose "Config: $CONFIG_FILE; shared adapter: $SHARED"
 if $SHARED; then
+  # Start Node directly so the launcher can signal it by PID.
+  start_vilocal node --require ./.pnp.cjs --loader ./.pnp.loader.mjs --disable-warning=ExperimentalWarning ./index.js
   SHARED_ARGS=()
   if $VERBOSE; then
     SHARED_ARGS+=(--verbose)
   fi
-  setsid bash "$(dirname "$0")/start-shared.sh" "${SHARED_ARGS[@]}" "${FORWARD_CMD[@]}" -- "${PIPE_CMD[@]}" < "$COMMAND_FIFO" > "$FIFO" &
+  VILOCAL_PID="$VILOCAL_PID" setsid bash "$(dirname "$0")/start-shared.sh" "${SHARED_ARGS[@]}" "${FORWARD_CMD[@]}" -- "${PIPE_CMD[@]}" < "$COMMAND_FIFO" > "$FIFO" &
   verbose "Shared-adapter helper started (PID $!)"
   PIDS+=("$!")
 else
@@ -166,14 +178,9 @@ else
     setsid cat -- "$COMMAND_FIFO" &
     PIDS+=("$!")
   fi
-fi
 
-if [[ ${#FORWARD_CMD[@]} -gt 0 ]] && $REDIRECT_STDOUT; then
-  setsid yarn run start > "$COMMAND_FIFO" &
-else
-  setsid yarn run start &
+  start_vilocal yarn run start
 fi
-PIDS+=("$!")
 
 STATUS=0
 wait -n "${PIDS[@]}" || STATUS=$?
