@@ -150,6 +150,11 @@ write_command() {
 
   verbose 'Restarting capture'
   start_capture
+
+  if ((status == 1)) && [[ ${VILOCAL_PID:-} =~ ^[1-9][0-9]*$ ]] &&
+    kill -USR2 "$VILOCAL_PID" 2>/dev/null; then
+    verbose 'Signaled ViLocal to retry its latest write'
+  fi
 }
 
 start_capture

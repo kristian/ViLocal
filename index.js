@@ -394,13 +394,21 @@ if (config.pass_through_commands ?? true) {
       throw new Error(`Unsupported pass_through_format: ${config.pass_through_format}`);
   }
 
+  let resendMessage;
+  process.on('SIGUSR2', () => {
+    resendMessage && resendMessage();
+    resendMessage = null;
+  });
+
   await mqttClient.subscribeAsync(`${mqttTopic}/+/+/+/set`); // device EUI / cluster / attribute / set
   mqttClient.on('message', async (topic, message, packet) => {
     const [formattedEui, cluster, attribute] = topic.substring(mqttTopic.length + 1).split('/'),
       eui = fromHex(formattedEui, /* reverse=*/true), addr = Object.entries(addressTable).find(([, value]) => Buffer.compare(value, eui) === 0)?.[0];
-    (message => message && passThroughOutput.write(message + '\n'))(formatPathThroughMessage({
-      eui, formattedEui, addr: addr ? fromHex(addr, /* reverse=*/true) : undefined, cluster, attribute, payload: message.toString(), topic
-    }));
+    (resendMessage = () => {
+      (message => message && passThroughOutput.write(message + '\n'))(formatPathThroughMessage({
+        eui, formattedEui, addr: addr ? fromHex(addr, /* reverse=*/true) : undefined, cluster, attribute, payload: message.toString(), topic
+      }));
+    })();
   });
 }
 
