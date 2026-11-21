@@ -285,7 +285,7 @@ Use [Ember Router](https://github.com/kristian/ember-router) to send heating set
 
 #### Set Up Ember Router
 
-Install `ember-router` and have `zbtk` available from the capture setup. The writing adapter needs EmberZNet coordinator (NCP) firmware so Ember Router can operate it as a Zigbee router. For a shared setup, pair the adapter you will also use for sniffing. Stop any process using that adapter before pairing. If it already has saved router membership on the target network, skip to the optional check in step 5.
+Install `ember-router` 2.1 or later and have `zbtk` available from the capture setup. The writing adapter needs EmberZNet coordinator (NCP) firmware so Ember Router can operate it as a Zigbee router. For a shared setup, pair the adapter you will also use for sniffing. Stop any process using that adapter before pairing. If it already has saved router membership on the target network, skip to the optional check in step 5.
 
 ```bash
 npm install -g ember-router
@@ -340,7 +340,7 @@ pass_through_format = "ember-router"
 
 - `named_pipe` is the capture FIFO used by `start.sh`. The launcher uses Bash, `mkfifo`, and `setsid`. For either FIFO option, use a single-quoted literal path or a double-quoted path without escapes.
 - `pass_through_commands` defaults to `true`, which sends commands on ViLocal's stdout. Set it to a separate FIFO path, such as `"/run/vicare_commands.fifo"`, to route commands through that FIFO. The launcher reads the command FIFO exclusively. It can use an existing FIFO and rejects regular files at either path. Set the option to `false` to disable command forwarding.
-- `pass_through_format` determines what ViLocal emits. The launcher relays the output unchanged. Select `"ember-router"` for the examples below.
+- `pass_through_format` determines what ViLocal emits. Select `"ember-router"` to send binary packets directly to Ember Router 2.1 or later. Select `"json"` to send newline-delimited JSON to other consumers.
 - `ember_router_sequence_file` stores the ZCL transaction number across ViLocal restarts. It defaults to `".ember-router-seq"` in the directory where you start ViLocal. You can use a relative or absolute path, such as `"/var/lib/vilocal/ember-router-seq"` for a service. The parent directory must exist and be writable. Use a separate file for each ViLocal instance.
 
 #### Separate Capture and Write Adapters
@@ -370,7 +370,9 @@ Use `--shared-adapter` with `--forward` and pass the **same adapter address** to
   /usr/bin/ember-sniff -p tcp://192.168.1.42:6638 -c 19
 ```
 
-Important Note: Use `ember-router write` as shown above. Ember Router's default `run` mode stays open after stdin closes, which delays capture restart until the writer times out!
+Use `ember-router write` as shown above so it exits when stdin closes and capture can resume.
+
+Add `--router-keepalive 15` before `--forward` to briefly resume the saved router network after 15 minutes without a write. This lets the gateway see the router periodically and can help keep ViCare from marking it as missing. Each handoff briefly pauses capture. Keepalive is off by default.
 
 ViLocal and its MQTT connection stay up during the switch. Shared mode is experimental. Test repeated switches on your adapter and firmware to confirm capture resumes and the saved network remains usable.
 

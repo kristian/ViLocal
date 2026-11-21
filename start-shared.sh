@@ -2,10 +2,15 @@
 set -euo pipefail
 
 VERBOSE=false
-if [[ "${1:-}" == --verbose || "${1:-}" == -v ]]; then
-  VERBOSE=true
+BINARY=false
+while true; do
+  case "${1:-}" in
+    -v|--verbose) VERBOSE=true ;;
+    --binary) BINARY=true ;;
+    *) break ;;
+  esac
   shift
-fi
+done
 
 verbose() {
   if $VERBOSE; then
@@ -40,7 +45,9 @@ command_file="$work_dir/command"
 capture_pid=
 relay_pid=
 writer_pid=
+command_relay_pid=
 write_timeout=30s
+keepalive_interval=${ROUTER_KEEPALIVE_SECONDS:-0}
 
 # Stop the whole process group before giving the adapter to the next command.
 stop_group() {
@@ -67,6 +74,10 @@ cleanup() {
   if [[ -n $relay_pid ]]; then
     kill "$relay_pid" 2>/dev/null || true
     wait "$relay_pid" 2>/dev/null || true
+  fi
+  if [[ -n $command_relay_pid ]]; then
+    kill "$command_relay_pid" 2>/dev/null || true
+    wait "$command_relay_pid" 2>/dev/null || true
   fi
   rm -f -- "$session_fifo" "$header_file" "$command_file" "$ready_file"
   rmdir -- "$work_dir"
@@ -118,26 +129,23 @@ check_capture() {
   done
 }
 
-write_command() {
-  local line=$1 newline=$2 status=0
-  if [[ -z ${line//[[:space:]]/} ]]; then
-    return 0
-  fi
-
+use_router() {
+  local input=$1 operation=$2 status=0
   check_capture
-  verbose "Command received; stopping capture (PID $capture_pid)"
+  verbose "Stopping capture (PID $capture_pid) for $operation"
   stop_group "$capture_pid"
   verbose 'Capture stopped; waiting for its relay to drain'
   capture_pid=
   wait "$relay_pid"
   relay_pid=
 
-  printf '%s%s' "$line" "$newline" > "$command_file"
   local -a write_cmd=(setsid -- timeout -k 5 "$write_timeout" "${writer[@]}")
-  if $VERBOSE; then
-    "${write_cmd[@]}" < "$command_file" >&2 &
+  if $VERBOSE && $BINARY; then
+    "${write_cmd[@]}" < "$input" > >(od -An -v -tx1 >&2) &
+  elif $VERBOSE; then
+    "${write_cmd[@]}" < "$input" >&2 &
   else
-    "${write_cmd[@]}" < "$command_file" >/dev/null &
+    "${write_cmd[@]}" < "$input" >/dev/null &
   fi
   writer_pid=$!
   verbose "Writer started (PID $writer_pid); waiting up to $write_timeout for it to exit"
@@ -145,31 +153,61 @@ write_command() {
   writer_pid=
   verbose "Writer exited with status $status"
   if ((status != 0)); then
-    echo "Warning: write command exited with status $status; restarting capture" >&2
+    echo "Warning: $operation exited with status $status; restarting capture" >&2
   fi
 
   verbose 'Restarting capture'
   start_capture
+  next_keepalive=$((SECONDS + keepalive_interval))
 
-  if ((status == 1)) && [[ ${VILOCAL_PID:-} =~ ^[1-9][0-9]*$ ]] &&
+  if [[ "$operation" == 'write command' ]] && ((status == 1)) &&
+    [[ ${VILOCAL_PID:-} =~ ^[1-9][0-9]*$ ]] &&
     kill -USR2 "$VILOCAL_PID" 2>/dev/null; then
     verbose 'Signaled ViLocal to retry its latest write'
   fi
 }
 
+write_command() {
+  local line=$1 newline=$2
+  if [[ -n ${line//[[:space:]]/} ]]; then
+    if $BINARY; then
+      printf '%b' "$(sed 's/../\\x&/g' <<< "$line")" > "$command_file"
+    else
+      printf '%s%s' "$line" "$newline" > "$command_file"
+    fi
+    use_router "$command_file" 'write command'
+  fi
+}
+
+if $BINARY; then
+  exec 3< <(exec node "$script_dir/packet-relay.js")
+  command_relay_pid=$!
+else
+  exec 3<&0
+fi
+
 start_capture
+next_keepalive=$((SECONDS + keepalive_interval))
 partial=
 while true; do
   check_capture
-  if IFS= read -r -t 0.2 chunk; then
+  if IFS= read -r -t 0.2 chunk <&3; then
     write_command "$partial$chunk" $'\n'
     partial=
   else
     status=$?
     partial+=$chunk
     if ((status <= 128)); then
-      write_command "$partial" ''
+      if $BINARY; then
+        wait "$command_relay_pid"
+      else
+        write_command "$partial" ''
+      fi
       exit 0
     fi
+  fi
+  if ((keepalive_interval && SECONDS >= next_keepalive)); then
+    # Empty input resumes the saved network without sending a write.
+    use_router /dev/null 'router keepalive'
   fi
 done

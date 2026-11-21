@@ -2,7 +2,7 @@
 set -euo pipefail
 
 usage() {
-  echo 'Usage: start.sh [-v|--verbose] CAPTURE [ARGS...] or start.sh [-v|--verbose] [--shared-adapter] --forward WRITER [ARGS...] -- CAPTURE [ARGS...]'
+  echo 'Usage: start.sh [-v|--verbose] CAPTURE [ARGS...] or start.sh [-v|--verbose] [--shared-adapter [--router-keepalive MINUTES]] --forward WRITER [ARGS...] -- CAPTURE [ARGS...]'
 }
 
 die() {
@@ -17,12 +17,18 @@ fi
 
 VERBOSE=false
 SHARED=false
-while [[ "${1:-}" == --verbose || "${1:-}" == -v || "${1:-}" == --shared-adapter ]]; do
-  if [[ "$1" == --verbose || "$1" == -v ]]; then
-    VERBOSE=true
-  else
-    SHARED=true
-  fi
+KEEPALIVE_MINUTES=0
+while true; do
+  case "${1:-}" in
+    -v|--verbose) VERBOSE=true ;;
+    --shared-adapter) SHARED=true ;;
+    --router-keepalive)
+      [[ "${2:-}" =~ ^[1-9][0-9]{0,8}$ ]] || die '--router-keepalive requires a positive whole number of minutes.'
+      KEEPALIVE_MINUTES=$2
+      shift
+      ;;
+    *) break ;;
+  esac
   shift
 done
 
@@ -77,6 +83,7 @@ FIFO="$(quoted_path "$(config_value named_pipe)")" && [[ -n "$FIFO" ]] ||
   die "named_pipe must be a nonempty quoted path in $CONFIG_FILE"
 
 COMMAND_FIFO=''
+PASS_THROUGH_FORMAT="$(quoted_path "$(config_value pass_through_format)")" || PASS_THROUGH_FORMAT=json
 PASS_THROUGH="$(config_value pass_through_commands)"
 if [[ -z "$PASS_THROUGH" || "$PASS_THROUGH" =~ ^true[[:space:]]*(#.*)?$ ]]; then
   REDIRECT_STDOUT=true
@@ -88,6 +95,10 @@ else
   REDIRECT_STDOUT=false
   COMMAND_FIFO="$(quoted_path "$PASS_THROUGH")" && [[ -n "$COMMAND_FIFO" ]] ||
     die "pass_through_commands must be true, false or a quoted FIFO path in $CONFIG_FILE"
+fi
+
+if ((KEEPALIVE_MINUTES > 0)) && ! $SHARED; then
+  die '--router-keepalive requires shared-adapter forwarding.'
 fi
 
 if $SHARED && [[ ! "$(config_value optimistic_climate_control)" =~ ^true[[:space:]]*(#.*)?$ ]]; then
@@ -159,7 +170,11 @@ if $SHARED; then
   if $VERBOSE; then
     SHARED_ARGS+=(--verbose)
   fi
-  VILOCAL_PID="$VILOCAL_PID" setsid bash "$(dirname "$0")/start-shared.sh" "${SHARED_ARGS[@]}" "${FORWARD_CMD[@]}" -- "${PIPE_CMD[@]}" < "$COMMAND_FIFO" > "$FIFO" &
+  if [[ "$PASS_THROUGH_FORMAT" == ember-router ]]; then
+    SHARED_ARGS+=(--binary)
+  fi
+  VILOCAL_PID="$VILOCAL_PID" ROUTER_KEEPALIVE_SECONDS="$((KEEPALIVE_MINUTES * 60))" \
+    setsid bash "$(dirname "$0")/start-shared.sh" "${SHARED_ARGS[@]}" "${FORWARD_CMD[@]}" -- "${PIPE_CMD[@]}" < "$COMMAND_FIFO" > "$FIFO" &
   verbose "Shared-adapter helper started (PID $!)"
   PIDS+=("$!")
 else
@@ -168,7 +183,9 @@ else
   verbose "Capture process started (PID $!)"
 
   if [[ ${#FORWARD_CMD[@]} -gt 0 ]]; then
-    if $VERBOSE; then
+    if $VERBOSE && [[ "$PASS_THROUGH_FORMAT" == ember-router ]]; then
+      setsid "${FORWARD_CMD[@]}" < "$COMMAND_FIFO" > >(od -An -v -tx1 >&2) &
+    elif $VERBOSE; then
       setsid "${FORWARD_CMD[@]}" < "$COMMAND_FIFO" >&2 &
     else
       setsid "${FORWARD_CMD[@]}" < "$COMMAND_FIFO" >/dev/null &

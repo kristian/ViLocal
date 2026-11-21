@@ -2,6 +2,10 @@
 
 This file documents all *major & minor* releases. For revisions, please consult the [commit history](https://github.com/kristian/ViLocal/commits/main).
 
+## [3.1] - 2026-11-21
+
+Add optional shared-adapter router keepalive with `--router-keepalive MINUTES`. The `ember-router` pass-through format now uses binary a packets package format and requires `ember-router` 2.1 or later. Use of a generic `json` format stays available for custom consumers of ViLocals command output, but cannot be used for `ember-router` <2.1 any longer.
+
 ## [3.0] - 2026-11-19
 
 > [!NOTE]

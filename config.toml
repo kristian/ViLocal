@@ -28,10 +28,10 @@ retain_state = false
 # https://www.home-assistant.io/integrations/climate.mqtt/#optimistic-mode
 optimistic_climate_control = false
 
-# wether to pass through commands received via updates to the command topics published to MQTT device discovery
-# if set to true, a JSON representation of the command will be emitted through stdout. can be set to a string representing a named pipe instead
+# whether to pass through commands received on the MQTT device discovery command topics
+# if set to true commands will be sent to stdout. a string sets the name of a named pipe, commands will be sent through that pipe instead
 pass_through_commands = true
-# format of the pass through output, one of "json", "ember-router", the latter being a JSON format the ember-router can forward to an ember-router 1:1
+# format of the pass-through output, one of "json" or "ember-router" for use with the ember-router 2.1+ binary packet format
 pass_through_format = "json"
 
 # file storing the ZCL sequence for ember-router writes

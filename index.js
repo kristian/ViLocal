@@ -24,6 +24,7 @@ import { connectAsync as mqttConnect } from 'mqtt';
 import { process as processCap, addressTable } from 'zbtk/cap';
 import { pk } from 'zbtk/crypto';
 import { fromHex, toHex } from 'zbtk/utils';
+import { encodePacket } from 'ember-router';
 import { eui as formatEui } from 'zbtk/format';
 import packageJson from './package.json' with { type: 'json' };
 
@@ -333,7 +334,7 @@ if (config.pass_through_commands ?? true) {
         eui: message.formattedEui,
         formattedEui: undefined,
         addr: message.addr ? toHex(message.addr) : undefined
-      });
+      }) + '\n';
       break;
     case 'ember-router': {
       // we use a dotfile to keep track of the ZCL sequence number for ember-router commands across restarts of ViLocal, otherwise writes up to the prev. seq. number fail
@@ -380,7 +381,7 @@ if (config.pass_through_commands ?? true) {
           .then(() => fs.writeFile(emberRouterSeqFile, `${emberRouterSeqNo}\n`, { mode: 0o600 }))
           .catch(error => console.warn(`Could not write to ${emberRouterSeqFile}: ${error.message}`));
 
-        return JSON.stringify({
+        return encodePacket({
           destination: message.addr.readUInt16BE(0),
           destinationEndpoint: 1,
           profileId: 260, // Zigbee Home Automation (HA) profile ID
@@ -405,7 +406,7 @@ if (config.pass_through_commands ?? true) {
     const [formattedEui, cluster, attribute] = topic.substring(mqttTopic.length + 1).split('/'),
       eui = fromHex(formattedEui, /* reverse=*/true), addr = Object.entries(addressTable).find(([, value]) => Buffer.compare(value, eui) === 0)?.[0];
     (resendMessage = () => {
-      (message => message && passThroughOutput.write(message + '\n'))(formatPassThroughMessage({
+      (message => message && passThroughOutput.write(message))(formatPassThroughMessage({
         eui, formattedEui, addr: addr ? fromHex(addr, /* reverse=*/true) : undefined, cluster, attribute, payload: message.toString(), topic
       }));
     })();
