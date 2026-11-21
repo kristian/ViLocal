@@ -52,6 +52,9 @@ topic = "ViLocal"
 # note: if set to false, home assistant will not be able to determine if the devices / entities are available
 online = true
 
+# enable MQTT attribute read and write commands when started with --router
+router_requests = true
+
 # the discovery prefix for devices, defaults to "homeassistant"
 device_discovery_prefix = "homeassistant"
 

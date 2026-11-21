@@ -23,10 +23,11 @@ import { toFormat as bufferFormat } from 'buffer-to-str';
 import { connectAsync as mqttConnect } from 'mqtt';
 import { process as processCap, addressTable } from 'zbtk/cap';
 import { pk } from 'zbtk/crypto';
-import { fromHex, toHex } from 'zbtk/utils';
+import { fromHex, toHex, reverseEndian } from 'zbtk/utils';
 import { encodePacket } from 'ember-router';
 import { eui as formatEui } from 'zbtk/format';
 import { createRouterClient } from 'ember-router/client';
+import { subscribeAttributeCommands, attributeCommand } from './attribute-commands.js';
 import packageJson from './package.json' with { type: 'json' };
 
 // zbtk uses console.log for capture diagnostics. Reserve stdout for pass-through commands.
@@ -322,20 +323,51 @@ await iterateDevices(async (type, id, options) => {
   await publishDevice(fromHex(options.serial_no), type, id, options);
 });
 
-// handle pass-through commands if enabled
-let passThroughRouter;
-if (config.pass_through_commands ?? true) {
-  if (env.VILOCAL_ROUTER_SOCKET) {
-    passThroughRouter = createRouterClient(env.VILOCAL_ROUTER_SOCKET, {
-      timeout: Number(env.VILOCAL_ROUTER_CLIENT_TIMEOUT_MS ?? 40_000)
-    });
-  }
+const passThrough = config.pass_through_commands ?? true;
+const routerRequests = (config.mqtt.router_requests ?? true) === true;
 
-  const passThroughOutput = !passThroughRouter && typeof config.pass_through_commands === 'string' ?
+let router;
+if (env.VILOCAL_ROUTER_SOCKET && (passThrough || routerRequests)) {
+  router = createRouterClient(env.VILOCAL_ROUTER_SOCKET, {
+    timeout: Number(env.VILOCAL_ROUTER_CLIENT_TIMEOUT_MS ?? 40_000)
+  });
+}
+
+const passThroughFormat = router ? 'ember-router' : config.pass_through_format ?? 'json';
+
+function findDeviceAddress(eui) {
+  const addr = Object.entries(addressTable).find(([, value]) => Buffer.compare(value, eui) === 0)?.[0];
+  return addr ? fromHex(addr, /* reverse=*/true) : undefined;
+}
+
+// preserve the ZCL transaction sequence across restarts for all router commands.
+const nextEmberRouterSeqNo = (() => {
+  const emberRouterSeqFile = config.ember_router_sequence_file ?? '.ember-router-seq';
+  let emberRouterReadSeq, emberRouterWriteSeq = Promise.resolve(), emberRouterSeqNo;
+
+  return async () => {
+    await (emberRouterReadSeq ??= fs.readFile(emberRouterSeqFile, 'utf8').catch(error => {
+      error.code !== 'ENOENT' && console.error(`Could not read ${emberRouterSeqFile}: ${error.message}`);
+      return '0';
+    }).then(value => {
+      emberRouterSeqNo = Number(value.trim().match(/^[+-]?\d+(?:\.\d+)?$/)?.[0] ?? '0') & 0xff;
+    }));
+
+    emberRouterSeqNo = (emberRouterSeqNo + 1) & 0xff;
+    emberRouterWriteSeq = emberRouterWriteSeq
+      .then(() => fs.writeFile(emberRouterSeqFile, `${emberRouterSeqNo}\n`, { mode: 0o600 }))
+      .catch(error => console.warn(`Could not write to ${emberRouterSeqFile}: ${error.message}`));
+    return emberRouterSeqNo;
+  };
+})();
+
+// handle pass-through commands if enabled
+if (passThrough) {
+  const passThroughOutput = !router && typeof config.pass_through_commands === 'string' ?
     createWriteStream(config.pass_through_commands) : stdout;
 
   let passThroughWrite;
-  switch (passThroughRouter ? 'ember-router' : config.pass_through_format ?? 'json') {
+  switch (passThroughFormat) {
     case 'json':
       passThroughWrite = message => passThroughOutput.write(JSON.stringify({
         ...message,
@@ -345,64 +377,34 @@ if (config.pass_through_commands ?? true) {
       }) + '\n');
       break;
     case 'ember-router': {
-      // we use a dotfile to keep track of the ZCL sequence number for ember-router commands across restarts of ViLocal, otherwise writes up to the prev. seq. number fail
-      const emberRouterSeqFile = config.ember_router_sequence_file ?? '.ember-router-seq';
-      let emberRouterSeqNo = Number((await fs.readFile(emberRouterSeqFile, 'utf8').catch(error => {
-          error.code !== 'ENOENT' && console.error(`Could not read ${emberRouterSeqFile}: ${error.message}`);
-          return '0';
-        })).trim().match(/^[+-]?\d+(?:\.\d+)?$/)?.[0] ?? '0') & 0xff,
-          emberRouterWriteSeq = Promise.resolve();
-
-      passThroughWrite = message => {
+      passThroughWrite = async message => {
         if (!message.addr) {
           console.warn(`Command message for device with EUI ${message.formattedEui} cannot be passed-through to ember-router because the NWK address is missing in the address table. In case the device exists the address table will update automatically.`);
           return; // messages without an address cannot be forwarded to ember-router
         }
 
-        let dataType, payloadBytes;
         const clusterId = fromHex(message.cluster).readUInt16BE(0),
           attributeId = fromHex(message.attribute).readUInt16BE(0);
-        switch (true) {
-          case clusterId === 0x0201 && attributeId === 0x0012: // Thermostat Cluster, Occupied Heating Setpoint
-            dataType = 0x29; // signed 16-bit integer
-            
-            // convert string to float and float to hundredths of a degree as bytes, e.g. !17.5" gets converted to 1750 in bytes
-            payloadBytes = Buffer.alloc(2);
-            payloadBytes.writeInt16LE(Math.round(parseFloat(message.payload) * 100), 0);
-            break;
-          default:
-            console.warn(`Unsupported cluster ${message.cluster} and / or attribute ${message.attribute} to pass-through to ember-router`);
-            return; // only supported attributes can be forwarded to ember-router
+        if (clusterId !== 0x0201 || attributeId !== 0x0012) { // Thermostat / Occupied Heating Setpoint
+          console.warn(`Unsupported cluster ${message.cluster} and / or attribute ${message.attribute} to pass-through to ember-router`);
+          return;
         }
 
+        // Home Assistant sends Celsius. The Zigbee setpoint uses hundredths of a degree.
+        const value = Math.round(parseFloat(message.payload) * 100);
+        const { payload, confirm } = attributeCommand('write', clusterId, attributeId, await nextEmberRouterSeqNo(), value);
         const packet = {
           destination: message.addr.readUInt16BE(0),
           destinationEndpoint: 1,
           profileId: 260, // Zigbee Home Automation (HA) profile ID
           clusterId,
-          payload: Buffer.from([
-            0x10, // ZCL frame control
-            (emberRouterSeqNo = (emberRouterSeqNo + 1) & 0xff), // ZCL transaction sequence number
-            0x02, // ZCL Write Attribute Command
-            attributeId & 0xff, // low byte of attribute ID
-            attributeId >> 8 & 0xff, // high byte of attribute ID
-            dataType, // ZCL data type
-            ...payloadBytes
-          ]).toString('hex')
+          payload
         };
 
-        emberRouterWriteSeq = emberRouterWriteSeq
-          .then(() => fs.writeFile(emberRouterSeqFile, `${emberRouterSeqNo}\n`, { mode: 0o600 }))
-          .catch(error => console.warn(`Could not write to ${emberRouterSeqFile}: ${error.message}`));
-
-        if (passThroughRouter) {
-          passThroughRouter.request(packet).then(reply => {
-            const payload = Buffer.from(reply.payload, 'hex');
-            const status = payload[2] === 0x0b ? payload[4] : payload[3];
-            if (status !== 0) {
-              throw new Error('Thermostat rejected the write (ZCL status ' + status + ')');
-            }
-          }).catch(error => console.warn('Could not write to thermostat: ' + error.message));
+        if (router) {
+          router.request(packet)
+            .then(reply => publishAttribute(message.formattedEui, message.cluster, message.attribute, confirm(reply)))
+            .catch(error => console.warn('Could not write to thermostat: ' + error.message));
         } else {
           passThroughOutput.write(encodePacket(packet));
         }
@@ -421,13 +423,38 @@ if (config.pass_through_commands ?? true) {
 
   await mqttClient.subscribeAsync(`${mqttTopic}/+/+/+/set`); // device EUI / cluster / attribute / set
   mqttClient.on('message', async (topic, message, packet) => {
+    if (!topic.endsWith('/set')) {
+      return;
+    }
     const [formattedEui, cluster, attribute] = topic.substring(mqttTopic.length + 1).split('/'),
-      eui = fromHex(formattedEui, /* reverse=*/true), addr = Object.entries(addressTable).find(([, value]) => Buffer.compare(value, eui) === 0)?.[0];
-    (resendMessage = () => {
-      passThroughWrite({
-        eui, formattedEui, addr: addr ? fromHex(addr, /* reverse=*/true) : undefined, cluster, attribute, payload: message.toString(), topic
-      });
+      eui = fromHex(formattedEui, /* reverse=*/true), addr = findDeviceAddress(eui);
+    (resendMessage = async () => {
+      try {
+        await passThroughWrite({
+          eui, formattedEui, addr, cluster, attribute, payload: message.toString(), topic
+        });
+      } catch (error) {
+        console.warn(`Could not forward ${topic}: ${error.message}`);
+      }
     })();
+  });
+}
+
+const formatAttributeBuffer = buffer => bufferFormat(buffer, config.buffer_format ?? 'hex');
+
+function publishAttribute(eui, cluster, attribute, value) {
+  const formattedValue = Buffer.isBuffer(value) ? formatAttributeBuffer(reverseEndian(value)) : value;
+  const topic = `${mqttTopic}/${formatEui(eui)}/${cluster.toLowerCase()}/${attribute.toLowerCase()}`;
+  return mqttClient.publishAsync(topic, Buffer.isBuffer(formattedValue) ? formattedValue : String(formattedValue),
+    { retain: config.retain_state ?? false });
+}
+
+if (routerRequests && router) {
+  await subscribeAttributeCommands({
+    mqttClient, mqttTopic, router,
+    resolveDestination: eui => findDeviceAddress(fromHex(eui, /* reverse=*/true))?.readUInt16BE(0),
+    nextSequence: nextEmberRouterSeqNo,
+    publishAttribute
   });
 }
 
@@ -437,7 +464,7 @@ config.network_key && pk(config.network_key);
 // process capture packets
 const capEmitter = await processCap(config.named_pipe ?? stdin, {
   unwrapLayers: config.unwrap_layers ?? [],
-  bufferFormat: buffer => bufferFormat(buffer, config.buffer_format ?? 'hex'),
+  bufferFormat: formatAttributeBuffer,
   emit: ['attribute'],
   out: {
     log: [config.log_level ?? 'warn'].flat(),
@@ -449,7 +476,7 @@ const capEmitter = await processCap(config.named_pipe ?? stdin, {
   }
 });
 capEmitter.on('end', async () => {
-  passThroughRouter?.close();
+  router?.close();
   // close the MQTT client, as soon as the stream ends
   await mqttClient.end();
 });

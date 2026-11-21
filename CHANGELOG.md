@@ -2,6 +2,10 @@
 
 This file documents all *major & minor* releases. For revisions, please consult the [commit history](https://github.com/kristian/ViLocal/commits/main).
 
+## [3.3] - 2026-11-21
+
+Add per-attribute MQTT reads and writes for `--router` in shared and dedicated setups. Publish successful reads and accepted write values to the existing EUI-based state topics. Upgrade ZBTK to 3.0.1 for attribute type lookup and encoding.
+
 ## [3.2] - 2026-11-21
 
 Add `start.sh --router` for binary request and response over a local socket with a dedicated or shared adapter.

@@ -887,12 +887,10 @@ __metadata:
   languageName: node
   linkType: hard
 
-"binary-parser-encoder-bump@npm:^2.2.1":
-  version: 2.2.1
-  resolution: "binary-parser-encoder-bump@npm:2.2.1"
-  dependencies:
-    smart-buffer: "npm:~4.2.0"
-  checksum: 10c0/c190eaf83e7c1a1c76ea5aec4344f95da00ef545f571314611760e28894a05935f70c95f94c2fb55e107fd34dce05c09b57d625fbef67e2ad170bddd98d1c34b
+"binary-parser@npm:^3.0.0":
+  version: 3.0.0
+  resolution: "binary-parser@npm:3.0.0"
+  checksum: 10c0/c0c264f99323db7df9f78884885da67aa73d295fb1641bd7090941d8bd83eec64ffe4f2a199c22da2fd4028d80e4f6c8cd89993d2964eb3e35d513beda1bed3f
   languageName: node
   linkType: hard
 
@@ -2725,7 +2723,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"smart-buffer@npm:^4.2.0, smart-buffer@npm:~4.2.0":
+"smart-buffer@npm:^4.2.0":
   version: 4.2.0
   resolution: "smart-buffer@npm:4.2.0"
   checksum: 10c0/a16775323e1404dd43fabafe7460be13a471e021637bc7889468eb45ce6a6b207261f454e4e530a19500cc962c4cc5348583520843b363f4193cee5c00e1e539
@@ -3090,7 +3088,7 @@ __metadata:
     ember-router: "npm:^2.2.0"
     mqtt: "npm:^5.16.1"
     smol-toml: "npm:^1.9.1"
-    zbtk: "npm:^2.10.0"
+    zbtk: "npm:^3.0.1"
   bin:
     vilocal: ./index.js
   languageName: unknown
@@ -3396,11 +3394,11 @@ __metadata:
   languageName: node
   linkType: hard
 
-"zbtk@npm:^2.10.0":
-  version: 2.10.0
-  resolution: "zbtk@npm:2.10.0"
+"zbtk@npm:^3.0.1":
+  version: 3.0.1
+  resolution: "zbtk@npm:3.0.1"
   dependencies:
-    binary-parser-encoder-bump: "npm:^2.2.1"
+    binary-parser: "npm:^3.0.0"
     cap-decoders: "npm:^0.2.0"
     es-main: "npm:^1.4.0"
     mqtt: "npm:^5.16.1"
@@ -3410,7 +3408,7 @@ __metadata:
     yargs: "npm:^18.2.0"
   bin:
     zbtk: ./cli.js
-  checksum: 10c0/2bb3cc79a4bef1834fa351ad229e61b7a5d022b9a35cf92282a2488eb1b38e4318eba3bddaada12ecc93b201ca52f7cbabd8f31ee62b6d2e0ec119453248c1b7
+  checksum: 10c0/a7a27c818cab1020eb9b7dd753cd85e6867443b41b2819610284023e9ec6212b27799b54fd8739f8ec5315e411e5973bd4143762bbb1b9c7714bd6a997359310
   languageName: node
   linkType: hard
 

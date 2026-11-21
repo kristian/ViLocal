@@ -41,7 +41,7 @@ The first step is to set-up your ZigBee sniffing hardware. This set-up is done o
 
 Depending on which [capture hardware](https://github.com/kristian/zbtk/blob/main/docs/tested-capture-devices.md) you plan on using, follow the set-up instructions provided. In my case I was first using a Ubisys Wireshark stick and later switched to an SMLIGHT SLZB-06M ethernet dongle. For both devices the set-up was quite straight forward. A major advantage of the SMLIGHT dongle, compared to the Ubisys stick is, that it can be freely placed anywhere in your house using ethernet / PoE and also the set-up does not require any drivers or manual patching of the Linux kernel. The SMLIGHT dongle is a true "out-of-the-box" solution, just make sure the device & radio firmware are up-to-date, by using the OTA update in its web UI and you are ready to go! 
 
-Now is a good time to also install Node.js in case you haven't done so, yet. Please make sure you check the required Node.js engine version and install it on your machine:
+Install Node.js 22.12.0 or later. Check the current engine requirement in [`package.json`](package.json).
 
 ```bash
 cd
@@ -391,7 +391,20 @@ As capture / sniffing pauses during writes on a shared adapter, ViLocal may miss
 optimistic_climate_control = true
 ```
 
-Restart ViLocal to republish the Home Assistant discovery configuration. A later captured setpoint report can still correct the display. ViLocal's MQTT state topic and separate heating setpoint sensor continue to reflect captured values. A displayed request is an assumption until the thermostat reports its setpoint. [See Home Assistant MQTT climate documentation](https://www.home-assistant.io/integrations/climate.mqtt/#optimistic-mode) for details on optimistic mode.
+Restart ViLocal to republish the Home Assistant discovery configuration. Captured setpoint reports can correct the display. When using `--router`, a successful Zigbee write acknowledgment also updates the MQTT state topic and the separate heating setpoint sensor. [Home Assistant MQTT climate documentation](https://www.home-assistant.io/integrations/climate.mqtt/#optimistic-mode)
+
+### Read and Write Zigbee Attributes over MQTT
+
+ViLocal can send on-demand attribute reads and writes to devices on your ViCare Zigbee network. Start ViLocal with `--router` using a shared or dedicated adapter. MQTT requests are enabled by default. To disable them, set `router_requests = false` under `[mqtt]`.
+
+Append `/read` or `/write` to the attribute’s MQTT state topic, `<mqttBase>/<EUI>/<cluster>/<attribute>`. Publish requests with retain disabled.
+
+- Read a thermostat’s local temperature by publishing an empty payload to `ViLocal/28-DB-A7-FF-FE-23-C0-0E/0x0201/0x0000/read`.
+- Set a thermostat’s heating setpoint to 22 °C by publishing `2200` to `ViLocal/28-DB-A7-FF-FE-23-C0-0E/0x0201/0x0012/write`.
+
+Send write values as JSON in the attribute’s Zigbee units. If ViLocal cannot infer the data type, include it with the value. For example, `{"type":"0x29","value":2200}` specifies a signed 16-bit integer.
+
+ViLocal publishes read results and acknowledged write values to the attribute’s state topic. Send a `/read` request to check the value on the device after a write.
 
 ## Author & Supporters
 
