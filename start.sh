@@ -2,7 +2,7 @@
 set -euo pipefail
 
 usage() {
-  echo 'Usage: start.sh [-v|--verbose] CAPTURE [ARGS...] or start.sh [-v|--verbose] [--shared-adapter [--router-keepalive MINUTES]] --forward WRITER [ARGS...] -- CAPTURE [ARGS...]'
+  echo 'Usage: start.sh [-v|--verbose] CAPTURE [ARGS...] or start.sh [-v|--verbose] [--shared-adapter [--router-keepalive MINUTES]] {--forward WRITER [ARGS...] | --router EMBER_ROUTER [ARGS...]} -- CAPTURE [ARGS...]'
 }
 
 die() {
@@ -39,16 +39,24 @@ verbose() {
 }
 
 FORWARD_CMD=()
-if [[ "${1:-}" == --forward ]]; then
+ROUTER_CMD=()
+if [[ "${1:-}" == --forward || "${1:-}" == --router ]]; then
+  mode="$1"
+  command_args=()
   shift
   while [[ $# -gt 0 && "$1" != -- ]]; do
-    FORWARD_CMD+=("$1")
+    command_args+=("$1")
     shift
   done
-  [[ ${#FORWARD_CMD[@]} -gt 0 && $# -gt 0 ]] || die "$(usage)"
+  [[ ${#command_args[@]} -gt 0 && $# -gt 0 ]] || die "$(usage)"
+  if [[ "$mode" == --router ]]; then
+    ROUTER_CMD=("${command_args[@]}")
+  else
+    FORWARD_CMD=("${command_args[@]}")
+  fi
   shift
 elif $SHARED; then
-  die '--shared-adapter requires --forward.'
+  die '--shared-adapter requires --forward or --router.'
 elif [[ "${1:-}" == -- ]]; then
   shift
 fi
@@ -85,7 +93,9 @@ FIFO="$(quoted_path "$(config_value named_pipe)")" && [[ -n "$FIFO" ]] ||
 COMMAND_FIFO=''
 PASS_THROUGH_FORMAT="$(quoted_path "$(config_value pass_through_format)")" || PASS_THROUGH_FORMAT=json
 PASS_THROUGH="$(config_value pass_through_commands)"
-if [[ -z "$PASS_THROUGH" || "$PASS_THROUGH" =~ ^true[[:space:]]*(#.*)?$ ]]; then
+if ((${#ROUTER_CMD[@]})); then
+  REDIRECT_STDOUT=false
+elif [[ -z "$PASS_THROUGH" || "$PASS_THROUGH" =~ ^true[[:space:]]*(#.*)?$ ]]; then
   REDIRECT_STDOUT=true
 elif [[ "$PASS_THROUGH" =~ ^false[[:space:]]*(#.*)?$ ]]; then
   REDIRECT_STDOUT=false
@@ -98,7 +108,7 @@ else
 fi
 
 if ((KEEPALIVE_MINUTES > 0)) && ! $SHARED; then
-  die '--router-keepalive requires shared-adapter forwarding.'
+  die '--router-keepalive requires --shared-adapter with --forward or --router.'
 fi
 
 if $SHARED && [[ ! "$(config_value optimistic_climate_control)" =~ ^true[[:space:]]*(#.*)?$ ]]; then
@@ -108,6 +118,7 @@ fi
 PIDS=()
 OWNED_FIFOS=()
 TEMP_DIR=''
+ROUTER_SOCKET=''
 
 cleanup() {
   local pid pipe
@@ -123,6 +134,9 @@ cleanup() {
       rm -f -- "$pipe"
     fi
   done
+  if [[ -n "$ROUTER_SOCKET" ]]; then
+    rm -f -- "$ROUTER_SOCKET"
+  fi
   if [[ -n "$TEMP_DIR" ]]; then
     rmdir -- "$TEMP_DIR"
   fi
@@ -141,8 +155,64 @@ ensure_fifo() {
   fi
 }
 
+# Derive the outer deadlines from Ember Router's millisecond timeouts.
+set_router_timeouts() {
+  local arg option value
+  local -A timeouts=([--timeout]=45000 [--write-timeout]=15000 [--read-timeout]=5000)
+  while (($#)); do
+    arg=$1
+    shift
+    option=${arg%%=*}
+    case "$option" in
+      --timeout|--write-timeout|--read-timeout)
+        if [[ "$arg" == *=* ]]; then
+          value=${arg#*=}
+        elif (($#)); then
+          value=$1
+          shift
+        else
+          continue
+        fi
+
+        if [[ "$value" =~ ^0*([0-9]{1,6})$ ]]; then
+          value=$((10#${BASH_REMATCH[1]}))
+        elif [[ "$value" =~ ^0[xX]0*([[:xdigit:]]{1,5})$ ]]; then
+          value=$((16#${BASH_REMATCH[1]}))
+        else
+          continue
+        fi
+        if ((value >= 100 && value <= 300000)); then
+          timeouts[$option]=$value
+        fi
+        ;;
+    esac
+  done
+
+  # The APS delivery and ZCL reply timers run in parallel.
+  local read_ms=${timeouts[--read-timeout]} write_ms=${timeouts[--write-timeout]}
+  local reply_ms=$((read_ms > write_ms ? read_ms : write_ms))
+  local reply_seconds=$(( (reply_ms + 999) / 1000 ))
+  local client_seconds=$((reply_seconds + 10))
+  if $SHARED; then
+    # Allow time to open and close the adapter around the network transition.
+    local startup_seconds=$(( (timeouts[--timeout] + 999) / 1000 + 15 ))
+    export ROUTER_REQUEST_TIMEOUT="$((startup_seconds + reply_seconds))s"
+    export ROUTER_KEEPALIVE_TIMEOUT="${startup_seconds}s"
+    client_seconds=$((client_seconds + startup_seconds))
+    if ((KEEPALIVE_MINUTES > 0)); then
+      client_seconds=$((client_seconds + startup_seconds + 10))
+    fi
+  fi
+  export VILOCAL_ROUTER_CLIENT_TIMEOUT_MS=$((1000 * (client_seconds > 40 ? client_seconds : 40)))
+}
+
 ensure_fifo "$FIFO"
-if [[ ${#FORWARD_CMD[@]} -gt 0 ]] && $REDIRECT_STDOUT; then
+if ((${#ROUTER_CMD[@]})); then
+  TEMP_DIR="$(mktemp -d)"
+  ROUTER_SOCKET="$TEMP_DIR/router.sock"
+  export VILOCAL_ROUTER_SOCKET="$ROUTER_SOCKET"
+  set_router_timeouts "${ROUTER_CMD[@]:1}"
+elif [[ ${#FORWARD_CMD[@]} -gt 0 ]] && $REDIRECT_STDOUT; then
   TEMP_DIR="$(mktemp -d)"
   COMMAND_FIFO="$TEMP_DIR/commands"
 fi
@@ -170,11 +240,17 @@ if $SHARED; then
   if $VERBOSE; then
     SHARED_ARGS+=(--verbose)
   fi
-  if [[ "$PASS_THROUGH_FORMAT" == ember-router ]]; then
+  SHARED_INPUT="$COMMAND_FIFO"
+  SHARED_WRITER=("${FORWARD_CMD[@]}")
+  if [[ -n "$ROUTER_SOCKET" ]]; then
+    SHARED_ARGS+=(--socket "$ROUTER_SOCKET")
+    SHARED_WRITER=("${ROUTER_CMD[@]}")
+    SHARED_INPUT=/dev/null
+  elif [[ "$PASS_THROUGH_FORMAT" == ember-router ]]; then
     SHARED_ARGS+=(--binary)
   fi
   VILOCAL_PID="$VILOCAL_PID" ROUTER_KEEPALIVE_SECONDS="$((KEEPALIVE_MINUTES * 60))" \
-    setsid bash "$(dirname "$0")/start-shared.sh" "${SHARED_ARGS[@]}" "${FORWARD_CMD[@]}" -- "${PIPE_CMD[@]}" < "$COMMAND_FIFO" > "$FIFO" &
+    setsid bash "$(dirname "$0")/start-shared.sh" "${SHARED_ARGS[@]}" "${SHARED_WRITER[@]}" -- "${PIPE_CMD[@]}" < "$SHARED_INPUT" > "$FIFO" &
   verbose "Shared-adapter helper started (PID $!)"
   PIDS+=("$!")
 else
@@ -182,7 +258,11 @@ else
   PIDS+=("$!")
   verbose "Capture process started (PID $!)"
 
-  if [[ ${#FORWARD_CMD[@]} -gt 0 ]]; then
+  if [[ -n "$ROUTER_SOCKET" ]]; then
+    setsid "${ROUTER_CMD[0]}" run --socket "$ROUTER_SOCKET" "${ROUTER_CMD[@]:1}" < /dev/null > /dev/null &
+    PIDS+=("$!")
+    verbose "Router process started (PID $!)"
+  elif [[ ${#FORWARD_CMD[@]} -gt 0 ]]; then
     if $VERBOSE && [[ "$PASS_THROUGH_FORMAT" == ember-router ]]; then
       setsid "${FORWARD_CMD[@]}" < "$COMMAND_FIFO" > >(od -An -v -tx1 >&2) &
     elif $VERBOSE; then

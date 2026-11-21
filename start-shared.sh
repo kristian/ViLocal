@@ -3,10 +3,16 @@ set -euo pipefail
 
 VERBOSE=false
 BINARY=false
+SOCKET=''
 while true; do
   case "${1:-}" in
     -v|--verbose) VERBOSE=true ;;
     --binary) BINARY=true ;;
+    --socket)
+      SOCKET="$2"
+      BINARY=true
+      shift
+      ;;
     *) break ;;
   esac
   shift
@@ -42,12 +48,25 @@ session_fifo="$work_dir/capture"
 header_file="$work_dir/header"
 ready_file="$work_dir/ready"
 command_file="$work_dir/command"
+reply_file="$work_dir/reply"
 capture_pid=
 relay_pid=
 writer_pid=
 command_relay_pid=
 write_timeout=30s
 keepalive_interval=${ROUTER_KEEPALIVE_SECONDS:-0}
+
+keepalive_args=()
+if [[ -n "$SOCKET" ]] && ((keepalive_interval)); then
+  # keepalive uses write, which only accepts the options shared with read.
+  for ((i = 1; i < ${#writer[@]}; i++)); do
+    case "${writer[i]}" in
+      --read-timeout|--expect) ((i += 1)) ;;
+      --read-timeout=*|--expect=*) ;;
+      *) keepalive_args+=("${writer[i]}") ;;
+    esac
+  done
+fi
 
 # Stop the whole process group before giving the adapter to the next command.
 stop_group() {
@@ -79,7 +98,7 @@ cleanup() {
     kill "$command_relay_pid" 2>/dev/null || true
     wait "$command_relay_pid" 2>/dev/null || true
   fi
-  rm -f -- "$session_fifo" "$header_file" "$command_file" "$ready_file"
+  rm -f -- "$session_fifo" "$header_file" "$command_file" "$ready_file" "$reply_file"
   rmdir -- "$work_dir"
 }
 
@@ -139,8 +158,22 @@ use_router() {
   wait "$relay_pid"
   relay_pid=
 
-  local -a write_cmd=(setsid -- timeout -k 5 "$write_timeout" "${writer[@]}")
-  if $VERBOSE && $BINARY; then
+  local deadline=$write_timeout
+  local -a writer_args=("${writer[@]}")
+  if [[ -n "$SOCKET" ]]; then
+    if [[ "$operation" == 'router keepalive' ]]; then
+      deadline=${ROUTER_KEEPALIVE_TIMEOUT:-60s}
+      writer_args=("${writer[0]}" write "${keepalive_args[@]}")
+    else
+      deadline=${ROUTER_REQUEST_TIMEOUT:-75s}
+      writer_args=("${writer[0]}" read "${writer[@]:1}")
+    fi
+  fi
+
+  local -a write_cmd=(setsid -- timeout -k 5 "$deadline" "${writer_args[@]}")
+  if [[ -n "$SOCKET" ]]; then
+    "${write_cmd[@]}" < "$input" > "$reply_file" &
+  elif $VERBOSE && $BINARY; then
     "${write_cmd[@]}" < "$input" > >(od -An -v -tx1 >&2) &
   elif $VERBOSE; then
     "${write_cmd[@]}" < "$input" >&2 &
@@ -148,7 +181,7 @@ use_router() {
     "${write_cmd[@]}" < "$input" >/dev/null &
   fi
   writer_pid=$!
-  verbose "Writer started (PID $writer_pid); waiting up to $write_timeout for it to exit"
+  verbose "Writer started (PID $writer_pid); waiting up to $deadline for it to exit"
   wait "$writer_pid" || status=$?
   writer_pid=
   verbose "Writer exited with status $status"
@@ -160,7 +193,15 @@ use_router() {
   start_capture
   next_keepalive=$((SECONDS + keepalive_interval))
 
-  if [[ "$operation" == 'write command' ]] && ((status == 1)) &&
+  if [[ "$operation" == 'router request' ]]; then
+    local reply=0000
+    if ((status == 0)) && [[ -s "$reply_file" ]]; then
+      reply=$(od -An -v -tx1 -- "$reply_file")
+      reply="${reply//[[:space:]]/}"
+      verbose "Router response: $reply"
+    fi
+    printf '%s\n' "$reply" >&4
+  elif [[ "$operation" == 'write command' ]] && ((status == 1)) &&
     [[ ${VILOCAL_PID:-} =~ ^[1-9][0-9]*$ ]] &&
     kill -USR2 "$VILOCAL_PID" 2>/dev/null; then
     verbose 'Signaled ViLocal to retry its latest write'
@@ -175,11 +216,19 @@ write_command() {
     else
       printf '%s%s' "$line" "$newline" > "$command_file"
     fi
-    use_router "$command_file" 'write command'
+    if [[ -n "$SOCKET" ]]; then
+      use_router "$command_file" 'router request'
+    else
+      use_router "$command_file" 'write command'
+    fi
   fi
 }
 
-if $BINARY; then
+if [[ -n "$SOCKET" ]]; then
+  coproc ROUTER_BRIDGE { exec node "$script_dir/shared-router-socket.js" "$SOCKET"; }
+  command_relay_pid=$ROUTER_BRIDGE_PID
+  exec 3<&"${ROUTER_BRIDGE[0]}" 4>&"${ROUTER_BRIDGE[1]}"
+elif $BINARY; then
   exec 3< <(exec node "$script_dir/packet-relay.js")
   command_relay_pid=$!
 else

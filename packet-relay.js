@@ -2,7 +2,7 @@ import { resolve } from 'node:path';
 import { stdin, stdout } from 'node:process';
 import { pipeline } from 'node:stream/promises';
 
-// Bash cannot hold NUL bytes. Keep complete Ember Router frames as hex during handoff.
+// bash cannot hold NUL bytes. Keep complete Ember Router frames as hex during handoff
 export async function* readFrames(input) {
   let pending = Buffer.alloc(0);
 

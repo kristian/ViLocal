@@ -1273,15 +1273,15 @@ __metadata:
   languageName: node
   linkType: hard
 
-"ember-router@npm:^2.1.0":
-  version: 2.1.0
-  resolution: "ember-router@npm:2.1.0"
+"ember-router@npm:^2.2.0":
+  version: 2.2.0
+  resolution: "ember-router@npm:2.2.0"
   dependencies:
     commander: "npm:^14.0.0"
     ember-zli: "npm:6.1.0"
   bin:
     ember-router: ./index.js
-  checksum: 10c0/6691aadb0df14909a3bed95da4440954b6e6cca6fa23dbbc4ee20403af4471688de885cfeb1f1e5b84bca7d305d6d28980605bc6f2c42f1a31e3f8bce6583b33
+  checksum: 10c0/cf9db785d956c5fc95625fe8a985a07e015bbea713018cf72e2d777d44b3cba69b7cee357e5bfe1f2620c9c2456f1ed47daf89d94adc4fe0f66b4ff0e2ea673b
   languageName: node
   linkType: hard
 
@@ -3087,7 +3087,7 @@ __metadata:
   resolution: "vilocal@workspace:."
   dependencies:
     buffer-to-str: "npm:^1.0.0"
-    ember-router: "npm:^2.1.0"
+    ember-router: "npm:^2.2.0"
     mqtt: "npm:^5.16.1"
     smol-toml: "npm:^1.9.1"
     zbtk: "npm:^2.10.0"

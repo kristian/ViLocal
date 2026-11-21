@@ -339,7 +339,7 @@ pass_through_format = "ember-router"
 ```
 
 - `named_pipe` is the capture FIFO used by `start.sh`. The launcher uses Bash, `mkfifo`, and `setsid`. For either FIFO option, use a single-quoted literal path or a double-quoted path without escapes.
-- `pass_through_commands` defaults to `true`, which sends commands on ViLocal's stdout. Set it to a separate FIFO path, such as `"/run/vicare_commands.fifo"`, to route commands through that FIFO. The launcher reads the command FIFO exclusively. It can use an existing FIFO and rejects regular files at either path. Set the option to `false` to disable command forwarding.
+- `pass_through_commands` defaults to `true`. With pipe forwarding, this sends commands on ViLocal's stdout. Set it to a separate FIFO path, such as `"/run/vicare_commands.fifo"`, to route commands through that FIFO. The launcher reads the command FIFO exclusively. It can use an existing FIFO and rejects regular files at either path. Set the option to `false` to disable command forwarding.
 - `pass_through_format` determines what ViLocal emits. Select `"ember-router"` to send binary packets directly to Ember Router 2.1 or later. Select `"json"` to send newline-delimited JSON to other consumers.
 - `ember_router_sequence_file` stores the ZCL transaction number across ViLocal restarts. It defaults to `".ember-router-seq"` in the directory where you start ViLocal. You can use a relative or absolute path, such as `"/var/lib/vilocal/ember-router-seq"` for a service. The parent directory must exist and be writable. Use a separate file for each ViLocal instance.
 
@@ -359,6 +359,15 @@ Use `--forward` if you want `start.sh` to start and supervise the writer alongsi
   /usr/bin/ember-sniff -p tcp://192.168.1.42:6638 -c 19
 ```
 
+To use a local socket, pass `--router` followed by the `ember-router` command and adapter options. The router stays connected on the write adapter. `-gg` reconnects it after adapter loss.
+
+```bash
+./start.sh --router ember-router -p tcp://192.168.1.43:6638 -gg -- \
+  ember-sniff -p tcp://192.168.1.42:6638 -c 19
+```
+
+With `--router`, ViLocal sends setpoint commands and receives replies over the socket while `pass_through_commands` is enabled. You can leave `pass_through_format` at its default. The launcher adjusts ViLocal's request deadline to give Ember Router time to finish when you set `--read-timeout` or `--write-timeout`.
+
 #### Shared Capture and Write Adapter
 
 A single Ember adapter can do both jobs by switching modes. During normal monitoring, `ember-sniff` has exclusive access to the adapter and feeds captured traffic to ViLocal. When ViLocal emits a write command, `start.sh` stops the sniffer and waits for it to release the adapter. It then runs `ember-router write`, which resumes the saved network, sends the queued command, and exits. The launcher restarts the sniffer even if the write fails.
@@ -370,9 +379,9 @@ Use `--shared-adapter` with `--forward` and pass the **same adapter address** to
   /usr/bin/ember-sniff -p tcp://192.168.1.42:6638 -c 19
 ```
 
-Use `ember-router write` as shown above so it exits when stdin closes and capture can resume.
+Use `ember-router write` as shown above with `--forward` so capture resumes when the writer exits. To use a socket, pass `--shared-adapter --router ember-router -p tcp://192.168.1.42:6638` before `--`. The launcher starts a short-lived `ember-router read` session for each request and resumes capture after the reply or a timeout. The deadline in shared mode also allows for restarting the router with its configured `--timeout` and for a keepalive already in progress.
 
-Add `--router-keepalive 15` before `--forward` to briefly resume the saved router network after 15 minutes without a write. This lets the gateway see the router periodically and can help keep ViCare from marking it as missing. Each handoff briefly pauses capture. Keepalive is off by default.
+Add `--router-keepalive 15` before `--forward` or `--router` to briefly resume the saved router network after 15 minutes without a write. This lets the gateway see the router periodically and can help keep ViCare from marking it as missing. Each handoff briefly pauses capture. Keepalive is off by default.
 
 ViLocal and its MQTT connection stay up during the switch. Shared mode is experimental. Test repeated switches on your adapter and firmware to confirm capture resumes and the saved network remains usable.
 

@@ -26,6 +26,7 @@ import { pk } from 'zbtk/crypto';
 import { fromHex, toHex } from 'zbtk/utils';
 import { encodePacket } from 'ember-router';
 import { eui as formatEui } from 'zbtk/format';
+import { createRouterClient } from 'ember-router/client';
 import packageJson from './package.json' with { type: 'json' };
 
 // zbtk uses console.log for capture diagnostics. Reserve stdout for pass-through commands.
@@ -322,19 +323,26 @@ await iterateDevices(async (type, id, options) => {
 });
 
 // handle pass-through commands if enabled
+let passThroughRouter;
 if (config.pass_through_commands ?? true) {
-  const passThroughOutput = typeof config.pass_through_commands === 'string' ?
+  if (env.VILOCAL_ROUTER_SOCKET) {
+    passThroughRouter = createRouterClient(env.VILOCAL_ROUTER_SOCKET, {
+      timeout: Number(env.VILOCAL_ROUTER_CLIENT_TIMEOUT_MS ?? 40_000)
+    });
+  }
+
+  const passThroughOutput = !passThroughRouter && typeof config.pass_through_commands === 'string' ?
     createWriteStream(config.pass_through_commands) : stdout;
 
-  let formatPassThroughMessage;
-  switch (config.pass_through_format ?? 'json') {
+  let passThroughWrite;
+  switch (passThroughRouter ? 'ember-router' : config.pass_through_format ?? 'json') {
     case 'json':
-      formatPassThroughMessage = message => JSON.stringify({
+      passThroughWrite = message => passThroughOutput.write(JSON.stringify({
         ...message,
         eui: message.formattedEui,
         formattedEui: undefined,
         addr: message.addr ? toHex(message.addr) : undefined
-      }) + '\n';
+      }) + '\n');
       break;
     case 'ember-router': {
       // we use a dotfile to keep track of the ZCL sequence number for ember-router commands across restarts of ViLocal, otherwise writes up to the prev. seq. number fail
@@ -345,10 +353,10 @@ if (config.pass_through_commands ?? true) {
         })).trim().match(/^[+-]?\d+(?:\.\d+)?$/)?.[0] ?? '0') & 0xff,
           emberRouterWriteSeq = Promise.resolve();
 
-      formatPassThroughMessage = message => {
+      passThroughWrite = message => {
         if (!message.addr) {
           console.warn(`Command message for device with EUI ${message.formattedEui} cannot be passed-through to ember-router because the NWK address is missing in the address table. In case the device exists the address table will update automatically.`);
-          return null; // messages without an address cannot be forwarded to ember-router
+          return; // messages without an address cannot be forwarded to ember-router
         }
 
         let dataType, payloadBytes;
@@ -364,30 +372,40 @@ if (config.pass_through_commands ?? true) {
             break;
           default:
             console.warn(`Unsupported cluster ${message.cluster} and / or attribute ${message.attribute} to pass-through to ember-router`);
-            return null; // only supported attributes can be forwarded to ember-router
+            return; // only supported attributes can be forwarded to ember-router
         }
 
-        const payload = Buffer.from([
-          0x10, // ZCL frame control
-          (emberRouterSeqNo = (emberRouterSeqNo + 1) & 0xff), // ZCL transaction sequence number
-          0x02, // ZCL Write Attribute Command
-          attributeId & 0xff, // low byte of attribute ID
-          attributeId >> 8 & 0xff, // high byte of attribute ID
-          dataType, // ZCL data type
-          ...payloadBytes
-        ]).toString('hex');
+        const packet = {
+          destination: message.addr.readUInt16BE(0),
+          destinationEndpoint: 1,
+          profileId: 260, // Zigbee Home Automation (HA) profile ID
+          clusterId,
+          payload: Buffer.from([
+            0x10, // ZCL frame control
+            (emberRouterSeqNo = (emberRouterSeqNo + 1) & 0xff), // ZCL transaction sequence number
+            0x02, // ZCL Write Attribute Command
+            attributeId & 0xff, // low byte of attribute ID
+            attributeId >> 8 & 0xff, // high byte of attribute ID
+            dataType, // ZCL data type
+            ...payloadBytes
+          ]).toString('hex')
+        };
 
         emberRouterWriteSeq = emberRouterWriteSeq
           .then(() => fs.writeFile(emberRouterSeqFile, `${emberRouterSeqNo}\n`, { mode: 0o600 }))
           .catch(error => console.warn(`Could not write to ${emberRouterSeqFile}: ${error.message}`));
 
-        return encodePacket({
-          destination: message.addr.readUInt16BE(0),
-          destinationEndpoint: 1,
-          profileId: 260, // Zigbee Home Automation (HA) profile ID
-          clusterId,
-          payload
-        });
+        if (passThroughRouter) {
+          passThroughRouter.request(packet).then(reply => {
+            const payload = Buffer.from(reply.payload, 'hex');
+            const status = payload[2] === 0x0b ? payload[4] : payload[3];
+            if (status !== 0) {
+              throw new Error('Thermostat rejected the write (ZCL status ' + status + ')');
+            }
+          }).catch(error => console.warn('Could not write to thermostat: ' + error.message));
+        } else {
+          passThroughOutput.write(encodePacket(packet));
+        }
       };
       break;
     }
@@ -406,9 +424,9 @@ if (config.pass_through_commands ?? true) {
     const [formattedEui, cluster, attribute] = topic.substring(mqttTopic.length + 1).split('/'),
       eui = fromHex(formattedEui, /* reverse=*/true), addr = Object.entries(addressTable).find(([, value]) => Buffer.compare(value, eui) === 0)?.[0];
     (resendMessage = () => {
-      (message => message && passThroughOutput.write(message))(formatPassThroughMessage({
+      passThroughWrite({
         eui, formattedEui, addr: addr ? fromHex(addr, /* reverse=*/true) : undefined, cluster, attribute, payload: message.toString(), topic
-      }));
+      });
     })();
   });
 }
@@ -431,6 +449,7 @@ const capEmitter = await processCap(config.named_pipe ?? stdin, {
   }
 });
 capEmitter.on('end', async () => {
+  passThroughRouter?.close();
   // close the MQTT client, as soon as the stream ends
   await mqttClient.end();
 });
