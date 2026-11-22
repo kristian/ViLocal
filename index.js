@@ -190,7 +190,7 @@ async function publishDevice(eui, type, id, options) {
         ...discoveryComponent('climate', {
           name: null, // use the name of the device
 
-          modes: ['auto'],
+          modes: ['heat'], // note: thermostats only support heating mode, "auto" in HA terms mean that the temperature cannot be manually set
           swing_modes: [],
           fan_modes: [],
           temp_step: 0.5,
@@ -202,7 +202,7 @@ async function publishDevice(eui, type, id, options) {
 
           // use an existing retained topic to publish the fixed climate control mode
           mode_state_topic: config.mqtt.online ? mqttAvailabilityTopic : '$SYS/broker/version',
-          mode_state_template: 'auto', // ... as state of thermostats is always auto (they will turn on if needed)
+          mode_state_template: 'heat', // ... as state of thermostats is always heating, there is no option to turn it off manually
 
           action_topic: `${deviceTopic}/0x0201/0x0008`, // Thermostat / PI Heating Demand
           action_template: "{{ 'heating' if (value | int(0)) > 0 else 'idle' }}",
