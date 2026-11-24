@@ -2,6 +2,11 @@
 
 This file documents all *major & minor* releases. For revisions, please consult the [commit history](https://github.com/kristian/ViLocal/commits/main).
 
+## [3.4] - 2026-11-24
+
+- Add **Valve Position** and **Target Valve Position** diagnostics for ViCare radiator thermostats. ViLocal learns and retains per-thermostat motor bounds, shows estimates once the observed span exceeds 500 steps, and uses calibration sweeps to find the closed position sooner.
+- Add **Lifetime Motor Steps** from the raw thermostat counter and **Firmware Version** from the reported software build ID.
+
 ## [3.3] - 2026-11-21
 
 Add per-attribute MQTT reads and writes for `--router` in shared and dedicated setups. Publish successful reads and accepted write values to the existing EUI-based state topics. Upgrade ZBTK to 3.0.1 for attribute type lookup and encoding.

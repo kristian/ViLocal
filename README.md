@@ -406,6 +406,18 @@ Send write values as JSON in the attribute’s Zigbee units. If ViLocal cannot i
 
 ViLocal publishes read results and acknowledged write values to the attribute’s state topic. Send a `/read` request to check the value on the device after a write.
 
+### Thermostat Valve Positions
+
+- **Valve Position** shows how far the radiator valve is open. **Target Valve Position** shows the opening the thermostat is aiming for.
+- **Lifetime Motor Steps** shows the thermostat's lifetime motor movement counter.
+
+Before ViCare can show the valve position of thermostats, ViLocal needs to observe enough movement to determine the full range of the valve. This ensures that the reported valve position are accurate and reliable. Home Assistant shows valve percentages only once ViLocal has seen enough movement to make a reasonable estimate. The valve sensors show **Unavailable** while ViLocal is still learning or the thermostat is calibrating.
+
+ViLocal learns the valve's range by watching it open and close during everyday heating and remembers that range across restarts. When ViCare calibrates the valve, the thermostat moves through a series of positions called a calibration sweep. Watching this sweep helps ViLocal learn the range sooner.
+
+> [!TIP]
+> Try moving the valve through its full range to help ViLocal learn the valve's limits faster. E.g. by setting the thermostat to its minimum and maximum heating setpoints once. The valve positions should start showing right after.
+
 ## Author & Supporters
 
 ViLocal by [Kristian Kraljić](https://kra.lc/).

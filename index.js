@@ -28,6 +28,7 @@ import { encodePacket } from 'ember-router';
 import { eui as formatEui } from 'zbtk/format';
 import { createRouterClient } from 'ember-router/client';
 import { subscribeAttributeCommands, attributeCommand } from './attribute-commands.js';
+import { monitorValvePositions, valvePositionTemplates, valvePositionTopics } from './valve-positions.js';
 import packageJson from './package.json' with { type: 'json' };
 
 // zbtk uses console.log for capture diagnostics. Reserve stdout for pass-through commands.
@@ -93,6 +94,7 @@ const mqttOptions = {
 
 // connect to MQTT broker
 const mqttClient = await mqttConnect(config.mqtt.url, mqttOptions);
+const valvePositions = await monitorValvePositions(mqttClient, mqttTopic, config.retain_state ?? false);
 const mqttConnected = async () => {
   config.mqtt.online && await mqttClient.publishAsync(
     mqttAvailabilityTopic, `${true}`, { retain: true });
@@ -125,6 +127,22 @@ async function publishDevice(eui, type, id, options) {
   const deviceTopic = `${mqttTopic}/${formattedEui}`;
   const genericName = type === TYPE_THERMOSTAT ? 'Thermostat' : 'Climate Sensor';
   const name = options?.name ?? genericName;
+
+  const valveSensor = {
+    entity_category: 'diagnostic',
+    icon: 'mdi:valve',
+    unit_of_measurement: '%',
+    suggested_display_precision: 0,
+    value_template: valvePositionTemplates.value,
+    json_attributes_topic: `${deviceTopic}/${valvePositionTopics.attributes}`,
+    json_attributes_template: valvePositionTemplates.attributes,
+    availability: [{
+      topic: `${deviceTopic}/${valvePositionTopics.attributes}`,
+      value_template: valvePositionTemplates.availability,
+      payload_available: 'true',
+      payload_not_available: 'false'
+    }]
+  };
 
   // add device to the known devices list
   knownDevices.add(hexEui);
@@ -257,6 +275,28 @@ async function publishDevice(eui, type, id, options) {
           state_topic: `${deviceTopic}/0x0201/0x0008`, // Thermostat / PI Heating Demand
           value_template: '{{ value | int }}',
           state_class: 'measurement'
+        }),
+        ...discoveryComponent('valve_position', 'sensor', {
+          name: 'Valve Position',
+
+          ...valveSensor,
+          state_topic: `${deviceTopic}/${valvePositionTopics.actual}`
+        }),
+        ...discoveryComponent('target_valve_position', 'sensor', {
+          name: 'Target Valve Position',
+
+          ...valveSensor,
+          state_topic: `${deviceTopic}/${valvePositionTopics.target}`
+        }),
+        ...discoveryComponent('motor_steps', 'sensor', {
+          name: 'Lifetime Motor Steps',
+          entity_category: 'diagnostic',
+
+          icon: 'mdi:counter',
+          unit_of_measurement: 'steps',
+          suggested_display_precision: 0,
+          state_topic: `${deviceTopic}/0x0B05/0x4010`, // Diagnostics / Motor Step Counter
+          state_class: 'total'
         })
       } : { // Climate Sensor
         ...discoveryComponent('temperature', 'sensor', {
@@ -309,6 +349,13 @@ async function publishDevice(eui, type, id, options) {
         suggested_display_precision: 0,
         state_topic: `${deviceTopic}/0x0B05/0x011D`, // Diagnostics / Last RSSI
         value_template: '{{ value | int }}'
+      }),
+      ...discoveryComponent('firmware_version', 'sensor', {
+        name: 'Firmware Version',
+        entity_category: 'diagnostic',
+
+        icon: 'mdi:chip',
+        state_topic: `${deviceTopic}/0x0000/0x4000` // Basic / Software Build ID
       })
     }
   };
@@ -442,11 +489,12 @@ if (passThrough) {
 
 const formatAttributeBuffer = buffer => bufferFormat(buffer, config.buffer_format ?? 'hex');
 
-function publishAttribute(eui, cluster, attribute, value) {
+async function publishAttribute(eui, cluster, attribute, value) {
   const formattedValue = Buffer.isBuffer(value) ? formatAttributeBuffer(reverseEndian(value)) : value;
   const topic = `${mqttTopic}/${formatEui(eui)}/${cluster.toLowerCase()}/${attribute.toLowerCase()}`;
-  return mqttClient.publishAsync(topic, Buffer.isBuffer(formattedValue) ? formattedValue : String(formattedValue),
+  await mqttClient.publishAsync(topic, Buffer.isBuffer(formattedValue) ? formattedValue : String(formattedValue),
     { retain: config.retain_state ?? false });
+  await valvePositions.update(topic, value);
 }
 
 if (routerRequests && router) {
@@ -477,6 +525,7 @@ const capEmitter = await processCap(config.named_pipe ?? stdin, {
 });
 capEmitter.on('end', async () => {
   router?.close();
+  await valvePositions.flush();
   // close the MQTT client, as soon as the stream ends
   await mqttClient.end();
 });
@@ -487,6 +536,8 @@ capEmitter.on('attribute', async function(attr, context) {
   switch (cluster.readUInt16BE(0)) {
     case 0x0201: // Thermostat
       type = TYPE_THERMOSTAT;
+      // ZBTK publishes the raw attribute after this event. The range update runs on its async queue.
+      valvePositions.update(`${mqttTopic}/${formatEui(eui)}/0x0201/${toHex(attr.id)}`, attr.value);
       break;
     case 0x0402: case 0x0405: // Temperature Measurement / Relative Humidity
       type = TYPE_CLIMATE_SENSOR;
