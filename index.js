@@ -92,6 +92,14 @@ const mqttOptions = {
   } : {})
 };
 
+// warn about insecure MQTT configurations, since anyone reaching the broker can control the heating
+if (!config.mqtt.username || !config.mqtt.password) {
+  console.warn(`No "username" / "password" configured for the MQTT broker at "${config.mqtt.url}". Any client able to reach the broker can send commands to ViLocal. Please configure broker authentication and restrict anonymous access.`);
+}
+if (/^mqtt:\/\//i.test(config.mqtt.url)) {
+  console.warn(`The MQTT broker at "${config.mqtt.url}" is configured over a plaintext "mqtt://" connection. Credentials and commands are sent unencrypted. Please use "mqtts://" / "wss://" instead.`);
+}
+
 // connect to MQTT broker
 const mqttClient = await mqttConnect(config.mqtt.url, mqttOptions);
 const valvePositions = await monitorValvePositions(mqttClient, mqttTopic, config.retain_state ?? false);
