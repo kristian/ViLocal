@@ -197,10 +197,9 @@ set_router_timeouts() {
     # Allow time to open and close the adapter around the network transition.
     local startup_seconds=$(( (timeouts[--timeout] + 999) / 1000 + 15 ))
     export ROUTER_REQUEST_TIMEOUT="$((startup_seconds + reply_seconds))s"
-    export ROUTER_KEEPALIVE_TIMEOUT="${startup_seconds}s"
     client_seconds=$((client_seconds + startup_seconds))
     if ((KEEPALIVE_MINUTES > 0)); then
-      client_seconds=$((client_seconds + startup_seconds + 10))
+      client_seconds=$((client_seconds + startup_seconds + reply_seconds + 10))
     fi
   fi
   export VILOCAL_ROUTER_CLIENT_TIMEOUT_MS=$((1000 * (client_seconds > 40 ? client_seconds : 40)))
@@ -215,6 +214,10 @@ if ((${#ROUTER_CMD[@]})); then
 elif [[ ${#FORWARD_CMD[@]} -gt 0 ]] && $REDIRECT_STDOUT; then
   TEMP_DIR="$(mktemp -d)"
   COMMAND_FIFO="$TEMP_DIR/commands"
+fi
+
+if ((KEEPALIVE_MINUTES > 0 && ${#FORWARD_CMD[@]} > 0)) && [[ "$PASS_THROUGH_FORMAT" == ember-router ]]; then
+  set_router_timeouts "${FORWARD_CMD[@]:1}"
 fi
 
 if [[ -n "$COMMAND_FIFO" ]]; then

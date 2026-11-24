@@ -55,6 +55,7 @@ writer_pid=
 command_relay_pid=
 write_timeout=30s
 keepalive_interval=${ROUTER_KEEPALIVE_SECONDS:-0}
+keepalive_sequence=$((RANDOM & 0xff))
 
 keepalive_args=()
 if [[ -n "$SOCKET" ]] && ((keepalive_interval)); then
@@ -160,14 +161,14 @@ use_router() {
 
   local deadline=$write_timeout
   local -a writer_args=("${writer[@]}")
-  if [[ -n "$SOCKET" ]]; then
-    if [[ "$operation" == 'router keepalive' ]]; then
-      deadline=${ROUTER_KEEPALIVE_TIMEOUT:-60s}
+  if [[ "$operation" == 'router keepalive' ]] && $BINARY; then
+    deadline=${ROUTER_REQUEST_TIMEOUT:-75s}
+    if [[ -n "$SOCKET" ]]; then
       writer_args=("${writer[0]}" write "${keepalive_args[@]}")
-    else
-      deadline=${ROUTER_REQUEST_TIMEOUT:-75s}
-      writer_args=("${writer[0]}" read "${writer[@]:1}")
     fi
+  elif [[ -n "$SOCKET" ]]; then
+    deadline=${ROUTER_REQUEST_TIMEOUT:-75s}
+    writer_args=("${writer[0]}" read "${writer[@]:1}")
   fi
 
   local -a write_cmd=(setsid -- timeout -k 5 "$deadline" "${writer_args[@]}")
@@ -205,6 +206,32 @@ use_router() {
     [[ ${VILOCAL_PID:-} =~ ^[1-9][0-9]*$ ]] &&
     kill -USR2 "$VILOCAL_PID" 2>/dev/null; then
     verbose 'Signaled ViLocal to retry its latest write'
+  fi
+}
+
+send_keepalive() {
+  # custom JSON writers still receive an empty input for the idle handoff.
+  if ! $BINARY; then
+    use_router /dev/null 'router keepalive'
+    return
+  fi
+
+  local payload
+  keepalive_sequence=$(((keepalive_sequence + 1) & 0xff))
+  # report the Basic cluster Power Source (DC) advertised during pairing to the coordinator.
+  # this server-to-client report uses its own ZCL sequence and disables the success default response.
+  printf -v payload '18%02x0a07003004' "$keepalive_sequence"
+  if (
+    cd -- "$script_dir" &&
+      node --require ./.pnp.cjs --loader ./.pnp.loader.mjs --disable-warning=ExperimentalWarning --input-type=module -e '
+        import { encodePacket } from "ember-router";
+        process.stdout.write(encodePacket({ destination: 0, clusterId: 0, payload: process.argv[1] }));
+      ' "$payload"
+  ) > "$command_file"; then
+    use_router "$command_file" 'router keepalive'
+  else
+    echo 'Warning: could not encode router keepalive' >&2
+    next_keepalive=$((SECONDS + keepalive_interval))
   fi
 }
 
@@ -256,7 +283,6 @@ while true; do
     fi
   fi
   if ((keepalive_interval && SECONDS >= next_keepalive)); then
-    # Empty input resumes the saved network without sending a write.
-    use_router /dev/null 'router keepalive'
+    send_keepalive
   fi
 done
