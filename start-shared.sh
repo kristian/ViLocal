@@ -151,13 +151,15 @@ check_capture() {
 
 use_router() {
   local input=$1 operation=$2 status=0
-  check_capture
-  verbose "Stopping capture (PID $capture_pid) for $operation"
-  stop_group "$capture_pid"
-  verbose 'Capture stopped; waiting for its relay to drain'
-  capture_pid=
-  wait "$relay_pid"
-  relay_pid=
+  if [[ -n $capture_pid ]]; then
+    check_capture
+    verbose "Stopping capture (PID $capture_pid) for $operation"
+    stop_group "$capture_pid"
+    verbose 'Capture stopped; waiting for its relay to drain'
+    capture_pid=
+    wait "$relay_pid"
+    relay_pid=
+  fi
 
   local deadline=$write_timeout
   local -a writer_args=("${writer[@]}")
@@ -187,10 +189,10 @@ use_router() {
   writer_pid=
   verbose "Writer exited with status $status"
   if ((status != 0)); then
-    echo "Warning: $operation exited with status $status; restarting capture" >&2
+    echo "Warning: $operation exited with status $status; continuing with capture" >&2
   fi
 
-  verbose 'Restarting capture'
+  verbose 'Starting capture'
   start_capture
   next_keepalive=$((SECONDS + keepalive_interval))
 
@@ -262,8 +264,14 @@ else
   exec 3<&0
 fi
 
-start_capture
-next_keepalive=$((SECONDS + keepalive_interval))
+if ((keepalive_interval)) && $BINARY; then
+  verbose 'Sending router keepalive before starting capture'
+  send_keepalive
+fi
+if [[ -z $capture_pid ]]; then
+  start_capture
+  next_keepalive=$((SECONDS + keepalive_interval))
+fi
 partial=
 while true; do
   check_capture

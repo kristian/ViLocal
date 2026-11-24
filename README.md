@@ -381,7 +381,7 @@ Use `--shared-adapter` with `--forward` and pass the **same adapter address** to
 
 Use `ember-router write` as shown above with `--forward` so capture resumes when the writer exits. To use a socket, pass `--shared-adapter --router ember-router -p tcp://192.168.1.42:6638` before `--`. The launcher starts a short-lived `ember-router read` session for each request and resumes capture after the reply or a timeout. The deadline in shared mode also allows for restarting the router with its configured `--timeout` and for a keepalive already in progress.
 
-Add `--router-keepalive 15` before `--router` or binary `--forward ember-router write` to enable keepalive in shared-adapter mode. After 15 minutes without a router command, ViLocal briefly pauses capture so the paired router can send its Basic Power Source report to Vitoconnect. Set the interval in minutes. Keepalive is off by default.
+Add `--router-keepalive 15` before `--router` or binary `--forward ember-router write` to enable keepalive in shared-adapter mode. At startup, the paired router sends its Basic Power Source report to Vitoconnect before packet capture begins. During operation, ViLocal briefly pauses capture to send another report after 15 minutes without a router command. Set the interval in minutes. Keepalive is off by default.
 
 ViLocal and its MQTT connection stay up during the switch. Shared mode is experimental. Test repeated switches on your adapter and firmware to confirm capture resumes and the saved network remains usable.
 
