@@ -48,7 +48,7 @@ export const valvePositionTemplates = {
     {%- set low = state_attr(entity_id, 'low') -%}
     {%- set high = state_attr(entity_id, 'high') -%}
     {%- set raw = value | int(none) -%}
-    {{- ((raw - low) * 100 + ${VALVE_TRAVEL / 2}) // ${VALVE_TRAVEL}
+    {{- ((raw - low) * 100 / ${VALVE_TRAVEL}) | round(0, 'ceil') | int
         if ${usableRangeTemplate} and raw is integer and low <= raw <= high else none -}}
   `
 };
