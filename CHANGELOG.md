@@ -2,6 +2,10 @@
 
 This file documents all *major & minor* releases. For revisions, please consult the [commit history](https://github.com/kristian/ViLocal/commits/main).
 
+## [3.5] - 2026-11-24
+
+Add support for ViCare floor thermostats. Each configured controller endpoint gets its own Home Assistant device with a requested output level, a separate reported output state, and optional room temperature and humidity from a climate sensor. Enable the existing command forwarding to send actuator requests through ember-router.
+
 ## [3.4] - 2026-11-24
 
 - Add **Valve Position** and **Target Valve Position** diagnostics for ViCare radiator thermostats. ViLocal learns and retains per-thermostat motor bounds, shows estimates once the observed span exceeds 500 steps, and uses calibration sweeps to find the closed position sooner.

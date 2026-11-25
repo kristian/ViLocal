@@ -3088,7 +3088,7 @@ __metadata:
     ember-router: "npm:^2.2.0"
     mqtt: "npm:^5.16.1"
     smol-toml: "npm:^1.9.1"
-    zbtk: "npm:^3.0.2"
+    zbtk: "npm:^3.1.1"
   bin:
     vilocal: ./index.js
   languageName: unknown
@@ -3394,9 +3394,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"zbtk@npm:^3.0.2":
-  version: 3.0.2
-  resolution: "zbtk@npm:3.0.2"
+"zbtk@npm:^3.1.1":
+  version: 3.1.1
+  resolution: "zbtk@npm:3.1.1"
   dependencies:
     binary-parser: "npm:^3.0.0"
     cap-decoders: "npm:^0.2.0"
@@ -3408,7 +3408,7 @@ __metadata:
     yargs: "npm:^18.2.0"
   bin:
     zbtk: ./cli.js
-  checksum: 10c0/84c3bf3da57279b8e4786e45711c1e1b84a4cd9d65abcf18967c202f9717b63bd1a418558d35b40992e1d6f60514c2614901292c46d8004796eb6d60743b570f
+  checksum: 10c0/7e4fd448fd09463a2c53d5e88ca2b90cb2dc3ac3fc85515187061a2fb8d1fac6c4603f1348f261dd1f280d6438b31a7069905ac7e665cdb9250f1e6ea8bee11a
   languageName: node
   linkType: hard
 

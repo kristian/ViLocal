@@ -2,9 +2,12 @@ import getCluster from 'zbtk/cluster';
 import { parse } from 'zbtk/parse';
 import { data } from 'zbtk/type';
 
-export function attributeCommand(action, clusterId, attributeId, sequence, value) {
-  const header = Buffer.from([0x10, sequence, action === 'read' ? 0x00 : 0x02, 0, 0]);
-  header.writeUInt16LE(attributeId, 3);
+export function attributeCommand(action, clusterId, attributeId, sequence, value, { manufacturerCode } = {}) {
+  const command = action === 'read' ? 0x00 : 0x02;
+  const header = manufacturerCode === undefined
+    ? Buffer.from([0x10, sequence, command, 0, 0])
+    : Buffer.from([0x04, manufacturerCode & 0xff, manufacturerCode >> 8, sequence, command, 0, 0]);
+  header.writeUInt16LE(attributeId, header.length - 2);
 
   let payload = header, written;
   if (action === 'write') {

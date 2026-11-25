@@ -195,7 +195,30 @@ name = "Bathroom"
 climate_sensor_serial_no = "FF-EE-DD-CC-BB-AA-00-00"
 ```
 
-Whilst not strictly required, in order to also expose this device to home assistant, list it in the `[climate_sensors]` section as well:
+#### Floor Thermostats
+
+Configure one `[floor_thermostats.<id>]` entry for each controller endpoint you want to expose in Home Assistant. Choose a unique ID for each entry, such as `bathroom` in the example below. Set `serial_no` to the controller's serial number or EUI-64 and `endpoint` to the Zigbee endpoint number. Entries on the same controller share `serial_no`.
+
+```toml
+[floor_thermostats.bathroom]
+serial_no = "AB-CD-EF-12-34-56-78-91"
+endpoint = 5
+name = "Bathroom"
+suggested_area = "Bathroom"
+climate_sensor_serial_no = "FF-EE-DD-CC-BB-AA-00-00"
+```
+
+Home Assistant shows **Requested Output Level** and **Output Active** separately for each configured floor thermostat. Set `climate_sensor_serial_no` to display the room temperature and humidity from an associated ViCare climate sensor.
+
+To send requested output levels from Home Assistant, enable command forwarding and use a paired Ember Router. With `pass_through_commands = false`, the requested output is read-only in Home Assistant. A write changes the actuator's requested output. Vitoconnect can replace that request on its next write. ViCare still manages room-temperature targets and schedules. [Enable Thermostat Writes](#5-optional-enable-thermostat-writes)
+
+With `--router`, a successful write response updates the requested level. The output state follows the controller's report. With a shared adapter, capture pauses for the write and can miss the immediate report, so the displayed output state can lag until the next report.
+
+The requested level is published to `ViLocal/<controller-eui>:<endpoint>/0x0008/0x4010` and the reported state (`0` or `1`) to `ViLocal/<controller-eui>:<endpoint>/0x0008/0x4004`. Publish an integer from `0` to `100` to `ViLocal/<controller-eui>:<endpoint>/0x0008/0x4010/set` to request a level.
+
+#### Climate Sensors
+
+To expose a linked climate sensor as its own Home Assistant device, also list it in the `[climate_sensors]` section.
 
 ```toml
 [climate_sensors]

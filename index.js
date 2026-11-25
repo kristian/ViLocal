@@ -30,18 +30,23 @@ import { createRouterClient } from 'ember-router/client';
 import { subscribeAttributeCommands, attributeCommand } from './attribute-commands.js';
 import { monitorValvePositions, valvePositionTemplates, valvePositionTopics } from './valve-positions.js';
 import packageJson from './package.json' with { type: 'json' };
+const zigbeeManufacturerCode = 0x1221; // Viessmann Elektronik GmbH
 
 // zbtk uses console.log for capture diagnostics. Reserve stdout for pass-through commands.
 console.log = console.info = console.debug = console.error;
 
-const TYPE_THERMOSTAT = 'thermostat', TYPE_CLIMATE_SENSOR = 'climate_sensor';
+const TYPE_THERMOSTAT = 'thermostat', TYPE_FLOOR_THERMOSTAT = 'floor_thermostat', TYPE_CLIMATE_SENSOR = 'climate_sensor';
 
 const configFile = (await exists('local_config.toml')) ? 'local_config.toml' : 'config.toml';
 const config = parseToml(await fs.readFile(configFile, 'utf8'));
 
+const passThrough = config.pass_through_commands ?? true;
+const routerRequests = (config.mqtt.router_requests ?? true) === true;
+
 async function iterateDevices(callback) {
   for (const [type, devices] of Object.entries({
     [TYPE_THERMOSTAT]: config.thermostats ?? {},
+    [TYPE_FLOOR_THERMOSTAT]: config.floor_thermostats ?? {},
     [TYPE_CLIMATE_SENSOR]: config.climate_sensors ?? {}
   })) {
     for (const [id, options] of Object.entries(devices)) {
@@ -63,16 +68,22 @@ if (!config.mqtt || !config.mqtt.url) {
 config.mqtt.online ??= true; // if not set, use a online topic
 
 const configDevices = new Set();
-iterateDevices((type, id, options) => {
+await iterateDevices((type, id, options) => {
   if (!options?.serial_no) {
     throw new TypeError(`Missing "serial_no" of ${type.replace('_', ' ')} "${id}" in "${ configFile }"`);
   }
 
+  const { endpoint } = options;
+  if (type === TYPE_FLOOR_THERMOSTAT && (!Number.isInteger(endpoint) || endpoint < 1 || endpoint > 240)) {
+    throw new TypeError(`Floor thermostat "${id}" requires an "endpoint" from 1 to 240`);
+  }
+
   const hexEui = fromHex(options.serial_no).toString('hex');
-  if (configDevices.has(hexEui)) {
-    throw new TypeError(`Duplicate serial number "${formatEui(options.serial_no)}" found for ${type.replace('_', ' ')} "${id}" in "${ configFile }"`);
+  const deviceKey = endpoint === undefined ? hexEui : `${hexEui}:${endpoint}`;
+  if (configDevices.has(deviceKey)) {
+    throw new TypeError(`Duplicate device "${options.serial_no}${endpoint === undefined ? '' : `:${endpoint}`}" for "${id}"`);
   } else {
-    configDevices.add(hexEui);
+    configDevices.add(deviceKey);
   }
 });
 
@@ -107,12 +118,13 @@ const knownDevices = new Set();
  * Publish a device to Home Assistant's MQTT discovery service.
  *
  * @param {Buffer} eui the EUI-64 of the device derived from the options.serial_no
- * @param {string} type either "thermostat" or "climate_sensor"
+ * @param {string} type "thermostat", "floor_thermostat" or "climate_sensor"
  * @param {string} [id] the ID of the device
  * @param {object} [options] config. options for the device
  * @param {string} [options.name] the name of the device
  * @param {string} [options.suggested_area] the suggested area of the device
- * @param {Buffer} [options.climate_sensor_serial_no] the EUI-64 of the climate sensor associated with the thermostat, only for type "thermostat"
+ * @param {number} [options.endpoint] the Zigbee endpoint
+ * @param {string} [options.climate_sensor_serial_no] the EUI-64 of a thermostat's associated climate sensor
  */
 async function publishDevice(eui, type, id, options) {
   if (!type) {
@@ -121,28 +133,32 @@ async function publishDevice(eui, type, id, options) {
   if (!id) {
     id = type; // e.g. "thermostat", or user specified "thermostat_bedroom"
   }
+  const { endpoint } = options ?? {};
 
   const hexEui = eui.toString('hex');
   const formattedEui = formatEui(eui);
-  const deviceTopic = `${mqttTopic}/${formattedEui}`;
-  const genericName = type === TYPE_THERMOSTAT ? 'Thermostat' : 'Climate Sensor';
-  const name = options?.name ?? genericName;
+  const formattedDeviceKey = endpoint ? `${formattedEui}:${endpoint}` : formattedEui;
+  const deviceTopic = `${mqttTopic}/${formattedDeviceKey}`;
 
-  const valveSensor = {
-    entity_category: 'diagnostic',
-    icon: 'mdi:valve',
-    unit_of_measurement: '%',
-    suggested_display_precision: 0,
-    value_template: valvePositionTemplates.value,
-    json_attributes_topic: `${deviceTopic}/${valvePositionTopics.attributes}`,
-    json_attributes_template: valvePositionTemplates.attributes,
-    availability: [{
-      topic: `${deviceTopic}/${valvePositionTopics.attributes}`,
-      value_template: valvePositionTemplates.availability,
-      payload_available: 'true',
-      payload_not_available: 'false'
-    }]
-  };
+  let genericName, deviceModel;
+  switch (type) {
+    case TYPE_THERMOSTAT:
+      genericName = 'Thermostat';
+      deviceModel = 'ZK03840';
+      break;
+    case TYPE_FLOOR_THERMOSTAT:
+      genericName = 'Floor Thermostat';
+      deviceModel = 'ZK03838';
+      break;
+    case TYPE_CLIMATE_SENSOR:
+      genericName = 'Climate Sensor';
+      deviceModel = 'ZK05991';
+      break;
+    default:
+      throw new TypeError(`Unknown device type: ${type}`);
+  }
+
+  const name = options?.name ?? (endpoint ? `${genericName} ${endpoint}` : genericName);
 
   // add device to the known devices list
   knownDevices.add(hexEui);
@@ -157,7 +173,7 @@ async function publishDevice(eui, type, id, options) {
     if (suffix && !suffix.startsWith('_')) {
       suffix = `_${suffix}`;
     }
-    const unique_id = `vilocal_${hexEui}${suffix}`;
+    const unique_id = `vilocal_${hexEui}${endpoint ? `_${endpoint}` : ''}${suffix}`;
 
     return {
       [unique_id]: {
@@ -175,11 +191,11 @@ async function publishDevice(eui, type, id, options) {
   const discovery = {
     device: {
       name,
-      identifiers: formattedEui,
+      identifiers: formattedDeviceKey,
       serial_number: formattedEui,
       manufacturer: 'Viessmann',
       model: `ViCare ${genericName}`,
-      model_id: type === TYPE_THERMOSTAT ? 'ZK03840' : 'ZK05991',
+      model_id: deviceModel,
       ...(options?.suggested_area ? { suggested_area: options.suggested_area } : {})
     },
     origin: { // see https://www.home-assistant.io/integrations/mqtt/#adding-information-about-the-origin-of-a-discovery-message
@@ -196,130 +212,182 @@ async function publishDevice(eui, type, id, options) {
         }
       ]
     } : {}),
-    // depending of the type of device, different components will be announced:
-    // - thermostats expose as a climate component
-    // - climate sensors expose as a temperature and humidity sensor
-    // all devices also expose a sensor showing the battery level, as well as the current link quality
-    components: {
-      ...(type === TYPE_THERMOSTAT ? {
-        // each component requires a id for discovery (the name of the attribute in the components object)
-        // as well as a object_id that is used for deriving the entity_id in home assistant, a unique_id
-        // in order to be able to change the entity_id and a display name, see https://www.home-assistant.io/integrations/mqtt/#naming-of-mqtt-entities
-        ...discoveryComponent('climate', {
-          name: null, // use the name of the device
+    components: {}
+  };
 
-          modes: ['heat'], // note: thermostats only support heating mode, "auto" in HA terms mean that the temperature cannot be manually set
-          swing_modes: [],
-          fan_modes: [],
-          temp_step: 0.5,
-          min_temp: 8.0, // taken from ViCare app
-          max_temp: 30.0, // taken from ViCare app
-          temperature_unit: 'C', // ZigBee works in Celsius, XXX: support for Fahrenheit needs a conversion / feature
-          optimistic: !!config.optimistic_climate_control,
-          precision: 0.1,
+  // depending of the type of device, different components will be announced:
+  // - thermostats expose as a climate component
+  // - floor thermostats feature a valve position
+  // - climate sensors expose as a temperature and humidity sensor
+  // all devices expose the Zigbee link quality, and battery devices also expose a sensor showing the battery level
+  if (type === TYPE_THERMOSTAT) {
+    const valveSensor = {
+      entity_category: 'diagnostic',
+      icon: 'mdi:valve',
+      unit_of_measurement: '%',
+      suggested_display_precision: 0,
+      value_template: valvePositionTemplates.value,
+      state_class: 'measurement',
+      json_attributes_topic: `${deviceTopic}/${valvePositionTopics.attributes}`,
+      json_attributes_template: valvePositionTemplates.attributes,
+      availability: [{
+        topic: `${deviceTopic}/${valvePositionTopics.attributes}`,
+        value_template: valvePositionTemplates.availability,
+        payload_available: 'true',
+        payload_not_available: 'false'
+      }]
+    };
 
-          // use an existing retained topic to publish the fixed climate control mode
-          mode_state_topic: config.mqtt.online ? mqttAvailabilityTopic : '$SYS/broker/version',
-          mode_state_template: 'heat', // ... as state of thermostats is always heating, there is no option to turn it off manually
+    Object.assign(discovery.components, {
+      // each component requires a id for discovery (the name of the attribute in the components object)
+      // as well as a object_id that is used for deriving the entity_id in home assistant, a unique_id
+      // in order to be able to change the entity_id and a display name, see https://www.home-assistant.io/integrations/mqtt/#naming-of-mqtt-entities
+      ...discoveryComponent('climate', {
+        name: null, // use the name of the device
 
-          action_topic: `${deviceTopic}/0x0201/0x0008`, // Thermostat / PI Heating Demand
-          action_template: "{{ 'heating' if (value | int(0)) > 0 else 'idle' }}",
+        modes: ['heat'], // note: thermostats only support heating mode, "auto" in HA terms mean that the temperature cannot be manually set
+        swing_modes: [],
+        fan_modes: [],
+        temp_step: 0.5,
+        min_temp: 8.0, // taken from ViCare app
+        max_temp: 30.0, // taken from ViCare app
+        temperature_unit: 'C', // ZigBee works in Celsius, XXX: support for Fahrenheit needs a conversion / feature
+        optimistic: !!config.optimistic_climate_control,
+        precision: 0.1,
 
-          temperature_state_topic: `${deviceTopic}/0x0201/0x0012`, // Thermostat / Occupied Heating Setpoint
-          temperature_state_template: '{{ (value | float ) / 100 | round(2) }}',
-          ...(!options?.climate_sensor_serial_no ? { // thermostats can be associated to a climate sensor for example in the same room
-            current_temperature_topic: `${deviceTopic}/0x0201/0x0000`, // Thermostat / Local Temperature
-            current_temperature_template: '{{ (value | float ) / 100 | round(2) }}',
-          } : { // in case of an associated climate sensor, display its temperature / humidity values instead of the ones reported by the thermostat
-            current_temperature_topic: `${mqttTopic}/${formatEui(options.climate_sensor_serial_no)}/0x0402/0x0000`,
-            current_temperature_template: '{{ (value | float ) / 100 | round(2) }}',
-            current_humidity_topic: `${mqttTopic}/${formatEui(options.climate_sensor_serial_no)}/0x0405/0x0000`,
-            current_humidity_template: '{{ (value | float ) / 100 | round(2) }}',
-          }),
+        // use an existing retained topic to publish the fixed climate control mode
+        mode_state_topic: config.mqtt.online ? mqttAvailabilityTopic : '$SYS/broker/version',
+        mode_state_template: 'heat', // ... as state of thermostats is always heating, there is no option to turn it off manually
 
-          temperature_command_topic: `${deviceTopic}/0x0201/0x0012/set`, // Thermostat / Occupied Heating Setpoint
+        action_topic: `${deviceTopic}/0x0201/0x0008`, // Thermostat / PI Heating Demand
+        action_template: "{{ 'heating' if (value | int(0)) > 0 else 'idle' }}",
+
+        temperature_state_topic: `${deviceTopic}/0x0201/0x0012`, // Thermostat / Occupied Heating Setpoint
+        temperature_state_template: '{{ (value | float ) / 100 | round(2) }}',
+        ...(!options?.climate_sensor_serial_no ? { // thermostats can be associated to a climate sensor for example in the same room
+          current_temperature_topic: `${deviceTopic}/0x0201/0x0000`, // Thermostat / Local Temperature
+          current_temperature_template: '{{ (value | float ) / 100 | round(2) }}',
+        } : { // in case of an associated climate sensor, display its temperature / humidity values instead of the ones reported by the thermostat
+          current_temperature_topic: `${mqttTopic}/${formatEui(options.climate_sensor_serial_no)}/0x0402/0x0000`,
+          current_temperature_template: '{{ (value | float ) / 100 | round(2) }}',
+          current_humidity_topic: `${mqttTopic}/${formatEui(options.climate_sensor_serial_no)}/0x0405/0x0000`,
+          current_humidity_template: '{{ (value | float ) / 100 | round(2) }}',
         }),
-        // also expose the individual values as sensors
-        ...discoveryComponent('heating_setpoint', 'sensor', {
-          name: 'Heating Setpoint', // will automatically get prefixed with the device name
 
-          icon: 'mdi:thermometer-plus',
-          device_class: 'temperature',
-          unit_of_measurement: '°C',
-          suggested_display_precision: 1,
-          state_topic: `${deviceTopic}/0x0201/0x0012`, // Thermostat / Occupied Heating Setpoint
-          value_template: '{{ (value | float ) / 100 | round(2) }}',
-          state_class: 'measurement'
-        }),
-        ...discoveryComponent('temperature', 'sensor', {
-          name: 'Temperature', // will automatically get prefixed with the device name
-
-          device_class: 'temperature',
-          unit_of_measurement: '°C',
-          suggested_display_precision: 1,
-          state_topic: `${deviceTopic}/0x0201/0x0000`, // Thermostat / Local Temperature
-          value_template: '{{ (value | float ) / 100 | round(2) }}',
-          state_class: 'measurement'
-        }),
-        ...discoveryComponent('window_open', 'binary_sensor', {
-          name: 'Window Open', // will automatically get prefixed with the device name
-
-          device_class: 'window',
-          state_topic: `${deviceTopic}/0x0201/0x4000`, // Thermostat / Manufacturer Specific (OpenWindowDetection)
-          value_template: '{{ "ON" if (value | int) == 3 else "OFF" }}'
-        }),
-        ...discoveryComponent('heating_demand', 'sensor', {
-          name: 'Heating Demand', // will automatically get prefixed with the device name
-
-          icon: 'mdi:thermometer-lines',
-          state_topic: `${deviceTopic}/0x0201/0x0008`, // Thermostat / PI Heating Demand
-          value_template: '{{ value | int }}',
-          state_class: 'measurement'
-        }),
-        ...discoveryComponent('valve_position', 'sensor', {
-          name: 'Valve Position',
-
-          ...valveSensor,
-          state_topic: `${deviceTopic}/${valvePositionTopics.actual}`
-        }),
-        ...discoveryComponent('target_valve_position', 'sensor', {
-          name: 'Target Valve Position',
-
-          ...valveSensor,
-          state_topic: `${deviceTopic}/${valvePositionTopics.target}`
-        }),
-        ...discoveryComponent('motor_steps', 'sensor', {
-          name: 'Lifetime Motor Steps',
-          entity_category: 'diagnostic',
-
-          icon: 'mdi:counter',
-          unit_of_measurement: 'steps',
-          suggested_display_precision: 0,
-          state_topic: `${deviceTopic}/0x0B05/0x4010`, // Diagnostics / Motor Step Counter
-          state_class: 'total'
-        })
-      } : { // Climate Sensor
-        ...discoveryComponent('temperature', 'sensor', {
-          name: 'Temperature', // will automatically get prefixed with the device name
-
-          device_class: 'temperature',
-          unit_of_measurement: '°C',
-          suggested_display_precision: 1,
-          state_topic: `${deviceTopic}/0x0402/0x0000`, // Temperature Measurement / Value
-          value_template: '{{ (value | float ) / 100 | round(2) }}',
-          state_class: 'measurement'
-        }),
-        ...discoveryComponent('humidity', 'sensor', {
-          name: 'Humidity', // will automatically get prefixed with the device name
-
-          device_class: 'humidity',
-          unit_of_measurement: '%',
-          suggested_display_precision: 0,
-          state_topic: `${deviceTopic}/0x0405/0x0000`, // Relative Humidity / Measurement Value
-          value_template: '{{ (value | float ) / 100 | round(2) }}',
-          state_class: 'measurement'
-        })
+        temperature_command_topic: `${deviceTopic}/0x0201/0x0012/set`, // Thermostat / Occupied Heating Setpoint
       }),
+      // also expose the individual values as sensors
+      ...discoveryComponent('heating_setpoint', 'sensor', {
+        name: 'Heating Setpoint', // will automatically get prefixed with the device name
+
+        icon: 'mdi:thermometer-plus',
+        device_class: 'temperature',
+        unit_of_measurement: '°C',
+        suggested_display_precision: 1,
+        state_topic: `${deviceTopic}/0x0201/0x0012`, // Thermostat / Occupied Heating Setpoint
+        value_template: '{{ (value | float ) / 100 | round(2) }}',
+        state_class: 'measurement'
+      }),
+      ...discoveryComponent('temperature', 'sensor', {
+        name: 'Temperature', // will automatically get prefixed with the device name
+
+        device_class: 'temperature',
+        unit_of_measurement: '°C',
+        suggested_display_precision: 1,
+        state_topic: `${deviceTopic}/0x0201/0x0000`, // Thermostat / Local Temperature
+        value_template: '{{ (value | float ) / 100 | round(2) }}',
+        state_class: 'measurement'
+      }),
+      ...discoveryComponent('window_open', 'binary_sensor', {
+        name: 'Window Open', // will automatically get prefixed with the device name
+
+        device_class: 'window',
+        state_topic: `${deviceTopic}/0x0201/0x4000`, // Thermostat / Manufacturer Specific (OpenWindowDetection)
+        value_template: '{{ "ON" if (value | int) == 3 else "OFF" }}'
+      }),
+      ...discoveryComponent('heating_demand', 'sensor', {
+        name: 'Heating Demand', // will automatically get prefixed with the device name
+
+        icon: 'mdi:thermometer-lines',
+        state_topic: `${deviceTopic}/0x0201/0x0008`, // Thermostat / PI Heating Demand
+        value_template: '{{ value | int }}',
+        state_class: 'measurement'
+      }),
+      ...discoveryComponent('valve_position', 'sensor', {
+        name: 'Valve Position',
+
+        ...valveSensor,
+        state_topic: `${deviceTopic}/${valvePositionTopics.actual}`
+      }),
+      ...discoveryComponent('target_valve_position', 'sensor', {
+        name: 'Target Valve Position',
+
+        ...valveSensor,
+        state_topic: `${deviceTopic}/${valvePositionTopics.target}`
+      }),
+      ...discoveryComponent('motor_steps', 'sensor', {
+        name: 'Lifetime Motor Steps',
+        entity_category: 'diagnostic',
+
+        icon: 'mdi:counter',
+        unit_of_measurement: 'steps',
+        suggested_display_precision: 0,
+        state_topic: `${deviceTopic}/0x0B05/0x4010`, // Diagnostics / Motor Step Counter
+        state_class: 'total'
+      })
+    });
+  }
+
+  if (type === TYPE_FLOOR_THERMOSTAT) {
+    Object.assign(discovery.components, {
+      ...discoveryComponent('requested_output_level', passThrough ? 'number' : 'sensor', {
+        name: 'Requested Output Level',
+        icon: 'mdi:valve',
+        unit_of_measurement: '%',
+        state_topic: `${deviceTopic}/0x0008/0x4010`, // Level Control / Requested Output
+        ...(passThrough
+          ? { command_topic: `${deviceTopic}/0x0008/0x4010/set`, min: 0, max: 100, step: 1 }
+          : { state_class: 'measurement' })
+      }),
+      ...discoveryComponent('output_active', 'binary_sensor', {
+        name: 'Output Active',
+        icon: 'mdi:heat-wave',
+        device_class: 'running',
+        state_topic: `${deviceTopic}/0x0008/0x4004`, // Level Control / Output State
+        payload_on: '1',
+        payload_off: '0'
+      })
+    });
+  }
+
+  if (type === TYPE_CLIMATE_SENSOR || (type === TYPE_FLOOR_THERMOSTAT && options.climate_sensor_serial_no)) {
+    const sensorTopic = type === TYPE_CLIMATE_SENSOR ? deviceTopic : `${mqttTopic}/${formatEui(options.climate_sensor_serial_no)}`;
+    Object.assign(discovery.components, {
+      ...discoveryComponent('temperature', 'sensor', {
+        name: 'Temperature', // will automatically get prefixed with the device name
+
+        device_class: 'temperature',
+        unit_of_measurement: '°C',
+        suggested_display_precision: 1,
+        state_topic: `${sensorTopic}/0x0402/0x0000`, // Temperature Measurement / Value
+        value_template: '{{ (value | float ) / 100 | round(2) }}',
+        state_class: 'measurement'
+      }),
+      ...discoveryComponent('humidity', 'sensor', {
+        name: 'Humidity', // will automatically get prefixed with the device name
+
+        device_class: 'humidity',
+        unit_of_measurement: '%',
+        suggested_display_precision: 0,
+        state_topic: `${sensorTopic}/0x0405/0x0000`, // Relative Humidity / Measurement Value
+        value_template: '{{ (value | float ) / 100 | round(2) }}',
+        state_class: 'measurement'
+      })
+    });
+  }
+
+  if (type !== TYPE_FLOOR_THERMOSTAT) {
+    Object.assign(discovery.components, {
       ...discoveryComponent('battery_level', 'sensor', {
         name: 'Battery Level', // will automatically get prefixed with the device name
         entity_category: 'diagnostic',
@@ -328,50 +396,54 @@ async function publishDevice(eui, type, id, options) {
         unit_of_measurement: '%',
         suggested_display_precision: 0,
         state_topic: `${deviceTopic}/0x0001/0x0021`, // Power Configuration / Battery Percentage Remaining
-        value_template: '{{ (value | float ) / 2 }}'
-      }),
-      ...discoveryComponent('link_quality', 'sensor', {
-        name: 'Link Quality', // will automatically get prefixed with the device name
-        entity_category: 'diagnostic',
-
-        icon: 'mdi:signal',
-        unit_of_measurement: '%',
-        suggested_display_precision: 0,
-        state_topic: `${deviceTopic}/0x0B05/0x011C`, // Diagnostics / Last LQI
-        value_template: '{{ ((value | float) / 255) * 100 | round(1) }}'
-      }),
-      ...discoveryComponent('signal_strength', 'sensor', {
-        name: 'Signal Strength', // will automatically get prefixed with the device name
-        entity_category: 'diagnostic',
-
-        device_class: 'signal_strength',
-        unit_of_measurement: 'dBm',
-        suggested_display_precision: 0,
-        state_topic: `${deviceTopic}/0x0B05/0x011D`, // Diagnostics / Last RSSI
-        value_template: '{{ value | int }}'
-      }),
-      ...discoveryComponent('firmware_version', 'sensor', {
-        name: 'Firmware Version',
-        entity_category: 'diagnostic',
-
-        icon: 'mdi:chip',
-        state_topic: `${deviceTopic}/0x0000/0x4000` // Basic / Software Build ID
+        value_template: '{{ (value | float ) / 2 }}',
+        state_class: 'measurement'
       })
-    }
-  };
+    });
+  }
+
+  const diagnosticsTopic = `${mqttTopic}/${formattedEui}`;
+  Object.assign(discovery.components, {
+    ...discoveryComponent('link_quality', 'sensor', {
+      name: 'Link Quality', // will automatically get prefixed with the device name
+      entity_category: 'diagnostic',
+
+      icon: 'mdi:signal',
+      unit_of_measurement: '%',
+      suggested_display_precision: 0,
+      state_topic: `${diagnosticsTopic}/0x0B05/0x011C`, // Diagnostics / Last LQI
+      value_template: '{{ ((value | float) / 255) * 100 | round(1) }}',
+      state_class: 'measurement'
+    }),
+    ...discoveryComponent('signal_strength', 'sensor', {
+      name: 'Signal Strength', // will automatically get prefixed with the device name
+      entity_category: 'diagnostic',
+
+      device_class: 'signal_strength',
+      unit_of_measurement: 'dBm',
+      suggested_display_precision: 0,
+      state_topic: `${diagnosticsTopic}/0x0B05/0x011D`, // Diagnostics / Last RSSI
+      value_template: '{{ value | int }}',
+      state_class: 'measurement'
+    }),
+    ...discoveryComponent('firmware_version', 'sensor', {
+      name: 'Firmware Version',
+      entity_category: 'diagnostic',
+
+      icon: 'mdi:chip',
+      state_topic: `${diagnosticsTopic}/0x0000/0x4000` // Basic / Software Build ID
+    })
+  });
 
   // publish to device discovery topic, see: https://www.home-assistant.io/integrations/mqtt/#discovery-messages
   // config messages are retained, see: https://www.home-assistant.io/integrations/mqtt/#using-retained-config-messages
-  await mqttClient.publishAsync(`${config.device_discovery_prefix ?? 'homeassistant'}/device/vilocal_${formattedEui.replaceAll(':', '-')}/config`,
+  await mqttClient.publishAsync(`${config.device_discovery_prefix ?? 'homeassistant'}/device/vilocal_${formattedDeviceKey.replaceAll(':', '-')}/config`,
     JSON.stringify(discovery), { retain: true });
 }
 
 await iterateDevices(async (type, id, options) => {
   await publishDevice(fromHex(options.serial_no), type, id, options);
 });
-
-const passThrough = config.pass_through_commands ?? true;
-const routerRequests = (config.mqtt.router_requests ?? true) === true;
 
 let router;
 if (env.VILOCAL_ROUTER_SOCKET && (passThrough || routerRequests)) {
@@ -432,17 +504,21 @@ if (passThrough) {
 
         const clusterId = fromHex(message.cluster).readUInt16BE(0),
           attributeId = fromHex(message.attribute).readUInt16BE(0);
-        if (clusterId !== 0x0201 || attributeId !== 0x0012) { // Thermostat / Occupied Heating Setpoint
+        let value, manufacturerCode;
+        if (clusterId === 0x0201 && attributeId === 0x0012) { // Thermostat / Occupied Heating Setpoint
+          value = Math.round(parseFloat(message.payload) * 100);
+        } else if (clusterId === 0x0008 && attributeId === 0x4010 && message.endpoint !== undefined) { // Viessmann Level Control / Requested Output
+          value = { type: 0x20, value: JSON.parse(message.payload) };
+          manufacturerCode = zigbeeManufacturerCode;
+        } else {
           console.warn(`Unsupported cluster ${message.cluster} and / or attribute ${message.attribute} to pass-through to ember-router`);
           return;
         }
-
-        // Home Assistant sends Celsius. The Zigbee setpoint uses hundredths of a degree.
-        const value = Math.round(parseFloat(message.payload) * 100);
-        const { payload, confirm } = attributeCommand('write', clusterId, attributeId, await nextEmberRouterSeqNo(), value);
+        const { payload, confirm } = attributeCommand('write', clusterId, attributeId, await nextEmberRouterSeqNo(), value,
+          { manufacturerCode });
         const packet = {
           destination: message.addr.readUInt16BE(0),
-          destinationEndpoint: 1,
+          destinationEndpoint: message.endpoint ?? 1,
           profileId: 260, // Zigbee Home Automation (HA) profile ID
           clusterId,
           payload
@@ -450,7 +526,7 @@ if (passThrough) {
 
         if (router) {
           router.request(packet)
-            .then(reply => publishAttribute(message.formattedEui, message.cluster, message.attribute, confirm(reply)))
+            .then(reply => publishAttribute(message.formattedEui, message.cluster, message.attribute, confirm(reply), message.endpoint))
             .catch(error => console.warn('Could not write to thermostat: ' + error.message));
         } else {
           passThroughOutput.write(encodePacket(packet));
@@ -468,17 +544,27 @@ if (passThrough) {
     resendMessage = null;
   });
 
-  await mqttClient.subscribeAsync(`${mqttTopic}/+/+/+/set`); // device EUI / cluster / attribute / set
+  await mqttClient.subscribeAsync(`${mqttTopic}/+/+/+/set`); // device EUI (optionally :endpoint) / cluster / attribute / set
   mqttClient.on('message', async (topic, message, packet) => {
-    if (!topic.endsWith('/set')) {
+    if (packet?.retain || !topic.startsWith(`${mqttTopic}/`) || !topic.endsWith('/set')) {
       return;
     }
-    const [formattedEui, cluster, attribute] = topic.substring(mqttTopic.length + 1).split('/'),
-      eui = fromHex(formattedEui, /* reverse=*/true), addr = findDeviceAddress(eui);
+
+    const [deviceKey, cluster, attribute, extraDash] = topic.slice(mqttTopic.length + 1, -4).split('/');
+    if (!deviceKey || deviceKey.startsWith(':') || !cluster || !attribute || extraDash !== undefined) {
+      return;
+    }
+
+    const [formattedEui, endpointStr, extraColon] = deviceKey.split(':'), eui = fromHex(formattedEui, /* reverse=*/true),
+      endpoint = endpointStr ? Number(endpointStr) : undefined, addr = findDeviceAddress(eui);
+    if (extraColon !== undefined) {
+      return;
+    }
+
     (resendMessage = async () => {
       try {
         await passThroughWrite({
-          eui, formattedEui, addr, cluster, attribute, payload: message.toString(), topic
+          eui, formattedEui, addr, cluster, attribute, payload: message.toString(), topic, endpoint
         });
       } catch (error) {
         console.warn(`Could not forward ${topic}: ${error.message}`);
@@ -489,9 +575,9 @@ if (passThrough) {
 
 const formatAttributeBuffer = buffer => bufferFormat(buffer, config.buffer_format ?? 'hex');
 
-async function publishAttribute(eui, cluster, attribute, value) {
+async function publishAttribute(eui, cluster, attribute, value, endpoint) {
   const formattedValue = Buffer.isBuffer(value) ? formatAttributeBuffer(reverseEndian(value)) : value;
-  const topic = `${mqttTopic}/${formatEui(eui)}/${cluster.toLowerCase()}/${attribute.toLowerCase()}`;
+  const topic = `${mqttTopic}/${formatEui(eui)}${endpoint ? `:${endpoint}` : ''}/${cluster.toLowerCase()}/${attribute.toLowerCase()}`;
   await mqttClient.publishAsync(topic, Buffer.isBuffer(formattedValue) ? formattedValue : String(formattedValue),
     { retain: config.retain_state ?? false });
   await valvePositions.update(topic, value);
@@ -518,7 +604,15 @@ const capEmitter = await processCap(config.named_pipe ?? stdin, {
     log: [config.log_level ?? 'warn'].flat(),
     mqtt: {
       client: mqttClient,
-      topic: mqttTopic,
+      topic: (topic, { eui, cluster, packet, write, attr }) => {
+        const aps = (packet.wpan ?? packet).zbee_nwk?.zbee_aps,
+          endpoint = write ? aps?.dst : aps?.src, clusterId = cluster.readUInt16BE(0);
+        if (!eui || endpoint === undefined || clusterId !== 0x0008) { // Level Control
+          return `${mqttTopic}/${topic.slice(topic.indexOf('/') + 1)}`;
+        }
+
+        return `${mqttTopic}/${formatEui(eui)}:${endpoint}/${toHex(cluster)}/${toHex(attr.id).toLowerCase()}`;
+      },
       retain: config.retain_state ?? false
     }
   }
@@ -531,6 +625,9 @@ capEmitter.on('end', async () => {
 });
 capEmitter.on('attribute', async function(attr, context) {
   const { eui, cluster } = context;
+  if (!eui || !cluster || !attr.id) {
+    return;
+  }
 
   let type;
   switch (cluster.readUInt16BE(0)) {
@@ -546,14 +643,15 @@ capEmitter.on('attribute', async function(attr, context) {
       return; // ignore any other clusters, such as Diagnostics, etc.
   }
 
-  if (!knownDevices.has(eui.toString('hex'))) {
+  const hexEui = eui.toString('hex');
+  if (!knownDevices.has(hexEui)) {
     console.warn(`Received attributes from unknown ${type.replace('_', ' ')} with serial number "${formatEui(eui)}". Consider adding it to the "${ configFile }" file to provide a better device discovery record. Device will ${ (config.publish_unknown_devices ?? true) ? 'be published using generic information' : 'not be published, as "publish_unknown_devices" is set to "false"' }.`);
     if (config.publish_unknown_devices ?? true) {
       await publishDevice(eui, type);
     } else {
       // add it to the known-device list anyways / without publishing it to
       // device discovery, in order to not repeat log outputs for this device
-      knownDevices.add(eui.toString('hex'));
+      knownDevices.add(hexEui);
     }
   }
 });
