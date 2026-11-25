@@ -29,6 +29,7 @@ import { eui as formatEui } from 'zbtk/format';
 import { createRouterClient } from 'ember-router/client';
 import { subscribeAttributeCommands, attributeCommand } from './attribute-commands.js';
 import { formatDeviceKey, parseDeviceKey } from './device-key.js';
+import { resolveLanguage, translations } from './localization.js';
 import { monitorValvePositions, valvePositionTemplates, valvePositionTopics } from './valve-positions.js';
 import packageJson from './package.json' with { type: 'json' };
 const defaultMfgCode = 0x1221; // Viessmann Elektronik GmbH
@@ -40,6 +41,7 @@ const TYPE_THERMOSTAT = 'thermostat', TYPE_FLOOR_CONTROLLER = 'floor_controller'
 
 const configFile = (await exists('local_config.toml')) ? 'local_config.toml' : 'config.toml';
 const config = parseToml(await fs.readFile(configFile, 'utf8'));
+const language = resolveLanguage(env.LANGUAGE), translation = translations[language] ?? null;
 
 const passThrough = config.pass_through_commands ?? true;
 const routerRequests = (config.mqtt.router_requests ?? true) === true;
@@ -159,7 +161,7 @@ async function publishDevice(eui, type, id, options) {
       deviceModel = 'ZK03838';
       break;
     case TYPE_FLOOR_THERMOSTAT:
-      genericName = 'Zone';
+      genericName = 'Floor Thermostat Zone';
       break;
     case TYPE_CLIMATE_SENSOR:
       genericName = 'Climate Sensor';
@@ -169,6 +171,7 @@ async function publishDevice(eui, type, id, options) {
       throw new TypeError(`Unknown device type: ${type}`);
   }
 
+  genericName = translation?.deviceTypes?.[type] ?? genericName;
   const name = options?.name ?? (type === TYPE_FLOOR_THERMOSTAT ? `${genericName} ${endpoint}` : genericName);
 
   // add device to the known devices list
@@ -197,10 +200,13 @@ async function publishDevice(eui, type, id, options) {
         platform,
 
         default_entity_id: `${platform}.vilocal_${type}${id !== type ? `_${id}` : ''}${suffix}`,
-        name: options?.name, // will automatically get prefixed with the device name
         unique_id,
 
-        ...(options ?? {})
+        ...(options ?? {}),
+
+        // apply the translated name if available, otherwise use the provided name from options
+        // this will automatically get prefixed with the device name by Home Assistant
+        ...translation?.components?.[suffix.slice(1)]
       }
     };
   }

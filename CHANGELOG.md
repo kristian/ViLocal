@@ -2,6 +2,10 @@
 
 This file documents all *major & minor* releases. For revisions, please consult the [commit history](https://github.com/kristian/ViLocal/commits/main).
 
+## [3.7] - 2026-11-25
+
+Add German device and entity labels for Home Assistant MQTT discovery. English remains the default. Set the `LANGUAGE` environment variable to `de` before starting ViLocal to use German labels. Configured names and suggested areas are used as entered.
+
 ## [3.6] - 2026-11-25
 
 - Add an External Window Open switch for ViCare radiator thermostats. Home Assistant and MQTT automations can use external contact sensors to set or clear the thermostat's own window-open input. The Window Open sensor continues to show the thermostat's reported state.
