@@ -4,7 +4,10 @@ This file documents all *major & minor* releases. For revisions, please consult 
 
 ## [3.6] - 2026-11-25
 
-Add an External Window Open switch for ViCare radiator thermostats. Home Assistant and MQTT automations can use external contact sensors to set or clear the thermostat's own window-open input. The Window Open sensor continues to show the thermostat's reported state.
+- Add an External Window Open switch for ViCare radiator thermostats. Home Assistant and MQTT automations can use external contact sensors to set or clear the thermostat's own window-open input. The Window Open sensor continues to show the thermostat's reported state.
+- Add Identification Mode and Installation Mode diagnostic binary sensors for ViCare radiator thermostats. Expose Child Lock as a switch with command forwarding enabled and as a read-only binary sensor with forwarding disabled. These entities are disabled by default.
+- Disable Firmware Version and Lifetime Motor Steps by default on discovery.
+- Make Valve Position and Target Valve Position require both valve data and ViLocal's general MQTT availability when the general availability topic is enabled.
 
 ## [3.5] - 2026-11-24
 

@@ -208,7 +208,7 @@ suggested_area = "Bathroom"
 climate_sensor_serial_no = "FF-EE-DD-CC-BB-AA-00-00"
 ```
 
-Home Assistant shows **Requested Output Level** and **Output Active** separately for each configured floor thermostat. Set `climate_sensor_serial_no` to display the room temperature and humidity from an associated ViCare climate sensor.
+Home Assistant shows Requested Output Level and Output Active separately for each configured floor thermostat. Set `climate_sensor_serial_no` to display the room temperature and humidity from an associated ViCare climate sensor.
 
 To send requested output levels from Home Assistant, enable command forwarding and use a paired Ember Router. With `pass_through_commands = false`, the requested output is read-only in Home Assistant. A write changes the actuator's requested output. Vitoconnect can replace that request on its next write. ViCare still manages room-temperature targets and schedules. [Enable Thermostat Writes](#5-optional-enable-thermostat-writes)
 
@@ -456,12 +456,20 @@ actions:
       entity_id: switch.vilocal_thermostat_bedroom_external_window_open
 ```
 
+### Thermostat Modes and Child Lock
+
+- Identification Mode briefly turns on when you tap the thermostat's connection button.
+- Installation Mode shows when the thermostat is ready to install.
+- Child Lock reflects changes made in the ViCare app. It appears as a switch with command forwarding enabled and as a read-only binary sensor with forwarding disabled.
+
+These entities are disabled by default in Home Assistant, along with Firmware Version and Lifetime Motor Steps.
+
 ### Thermostat Valve Positions
 
-- **Valve Position** shows how far the radiator valve is open. **Target Valve Position** shows the opening the thermostat is aiming for.
-- **Lifetime Motor Steps** shows the thermostat's lifetime motor movement counter.
+- Valve Position shows how far the radiator valve is open. Target Valve Position shows the opening the thermostat is aiming for.
+- Lifetime Motor Steps shows the thermostat's lifetime motor movement counter.
 
-Before ViCare can show the valve position of thermostats, ViLocal needs to observe enough movement to determine the full range of the valve. This ensures that the reported valve position are accurate and reliable. Home Assistant shows valve percentages only once ViLocal has seen enough movement to make a reasonable estimate. The valve sensors show **Unavailable** while ViLocal is still learning or the thermostat is calibrating.
+Before ViCare can show the valve position of thermostats, ViLocal needs to observe enough movement to determine the full range of the valve. This ensures that the reported valve position are accurate and reliable. Home Assistant shows valve percentages only once ViLocal has seen enough movement to make a reasonable estimate. The valve sensors show Unavailable while ViLocal is still learning, while the thermostat is calibrating, or when ViLocal's general MQTT availability topic reports it offline.
 
 ViLocal learns the valve's range by watching it open and close during everyday heating and remembers that range across restarts. When ViCare calibrates the valve, the thermostat moves through a series of positions called a calibration sweep. Watching this sweep helps ViLocal learn the range sooner.
 

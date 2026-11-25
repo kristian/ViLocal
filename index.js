@@ -236,7 +236,8 @@ async function publishDevice(eui, type, id, options) {
       state_class: 'measurement',
       json_attributes_topic: `${deviceTopic}/${valvePositionTopics.attributes}`,
       json_attributes_template: valvePositionTemplates.attributes,
-      availability: [{
+      availability_mode: 'all',
+      availability: [...(discovery.availability ?? []), {
         topic: `${deviceTopic}/${valvePositionTopics.attributes}`,
         value_template: valvePositionTemplates.availability,
         payload_available: 'true',
@@ -320,7 +321,7 @@ async function publishDevice(eui, type, id, options) {
           payload_on: 'true',
           payload_off: 'false',
           optimistic: !router
-        } : null),
+        } : null), // the external window open attribute cannot be set in the app, so it only make sense if pass-through is enabled
       ...discoveryComponent('heating_demand', 'sensor', {
         name: 'Heating Demand', // will automatically get prefixed with the device name
 
@@ -344,12 +345,44 @@ async function publishDevice(eui, type, id, options) {
       ...discoveryComponent('motor_steps', 'sensor', {
         name: 'Lifetime Motor Steps',
         entity_category: 'diagnostic',
+        enabled_by_default: false,
 
         icon: 'mdi:counter',
         unit_of_measurement: 'steps',
         suggested_display_precision: 0,
         state_topic: `${deviceTopic}/0x0B05/0x4010`, // Diagnostics / Motor Step Counter
         state_class: 'total'
+      }),
+      ...discoveryComponent('identification_mode', 'binary_sensor', {
+        name: 'Identification Mode',
+        entity_category: 'diagnostic',
+        enabled_by_default: false,
+
+        state_topic: `${deviceTopic}/0x0003/0x4000`, // Identify / Identification Button (quick press on the connect button on the thermostat)
+        payload_on: 'true',
+        payload_off: 'false'
+      }),
+      ...discoveryComponent('installation_mode', 'binary_sensor', {
+        name: 'Installation Mode',
+        entity_category: 'diagnostic',
+        enabled_by_default: false,
+
+        icon: 'mdi:wrench',
+        state_topic: `${deviceTopic}/0x0201/0x4012`, // Thermostat / Installation Mode
+        payload_on: 'true',
+        payload_off: 'false'
+      }),
+      ...discoveryComponent('child_lock', passThrough ? 'switch' : 'binary_sensor', {
+        name: 'Child Lock',
+        enabled_by_default: false,
+
+        icon: 'mdi:lock',
+        state_topic: `${deviceTopic}/0x0204/0x0001`, // Thermostat User Interface Configuration / Keypad Lockout
+        payload_on: '1',
+        payload_off: '0',
+        ...(passThrough
+          ? { command_topic: `${deviceTopic}/0x0204/0x0001/set`, optimistic: !router }
+          : {})
       })
     });
   }
@@ -445,6 +478,7 @@ async function publishDevice(eui, type, id, options) {
     ...discoveryComponent('firmware_version', 'sensor', {
       name: 'Firmware Version',
       entity_category: 'diagnostic',
+      enabled_by_default: false,
 
       icon: 'mdi:chip',
       state_topic: `${diagnosticsTopic}/0x0000/0x4000` // Basic / Software Build ID
@@ -525,7 +559,15 @@ if (passThrough) {
           value = Math.round(parseFloat(message.payload) * 100);
         } else if (clusterId === 0x0201 && attrId === 0x4003) { // Thermostat / External Window Open
           value = { type: 0x10, value: JSON.parse(message.payload) };
+          if (typeof value.value !== 'boolean') {
+            throw new Error('External Window Open requires a boolean value.');
+          }
           mfgCode = defaultMfgCode;
+        } else if (clusterId === 0x0204 && attrId === 0x0001) { // Thermostat User Interface Configuration / Keypad Lockout
+          value = JSON.parse(message.payload);
+          if (value !== 0 && value !== 1) {
+            throw new Error('Child Lock requires 0 (off) or 1 (on).');
+          }
         } else if (clusterId === 0x0008 && attrId === 0x4010 && message.endpoint !== undefined) { // Viessmann Level Control / Requested Output
           value = { type: 0x20, value: JSON.parse(message.payload) };
           mfgCode = defaultMfgCode;
@@ -632,6 +674,7 @@ const capEmitter = await processCap(config.named_pipe ?? stdin, {
           switch (true) {
             case clusterId === 0x0008 && attrId === 0x4010: // Level Control / Requested Output
             case clusterId === 0x0201 && attrId === 0x4003: // Thermostat / External Window Open
+            case clusterId === 0x0204 && attrId === 0x0001: // Thermostat User Interface Configuration / Keypad Lockout
               return false; // wait for the write response instead of publishing the captured request
           }
         }
