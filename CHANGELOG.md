@@ -2,14 +2,18 @@
 
 This file documents all *major & minor* releases. For revisions, please consult the [commit history](https://github.com/kristian/ViLocal/commits/main).
 
+## [3.6] - 2026-11-25
+
+Add an External Window Open switch for ViCare radiator thermostats. Home Assistant and MQTT automations can use external contact sensors to set or clear the thermostat's own window-open input. The Window Open sensor continues to show the thermostat's reported state.
+
 ## [3.5] - 2026-11-24
 
 Add support for ViCare floor thermostats. Each configured controller endpoint gets its own Home Assistant device with a requested output level, a separate reported output state, and optional room temperature and humidity from a climate sensor. Enable the existing command forwarding to send actuator requests through ember-router.
 
 ## [3.4] - 2026-11-24
 
-- Add **Valve Position** and **Target Valve Position** diagnostics for ViCare radiator thermostats. ViLocal learns and retains per-thermostat motor bounds, shows estimates once the observed span exceeds 500 steps, and uses calibration sweeps to find the closed position sooner.
-- Add **Lifetime Motor Steps** from the raw thermostat counter and **Firmware Version** from the reported software build ID.
+- Add Valve Position and Target Valve Position diagnostics for ViCare radiator thermostats. ViLocal learns and retains per-thermostat motor bounds, shows estimates once the observed span exceeds 500 steps, and uses calibration sweeps to find the closed position sooner.
+- Add Lifetime Motor Steps from the raw thermostat counter and Firmware Version from the reported software build ID.
 
 Shared-adapter keepalive now sends a Basic Power Source report from the paired Ember router to Vitoconnect. Enable it with the existing `--router-keepalive MINUTES` option when using `--router` or binary `--forward`. Send the first shared-adapter keepalive at startup, before packet capture begins.
 
@@ -56,7 +60,7 @@ Add heating demand value to thermostat entities. The thermostats will indicate i
 
 ## [2.0] - 2025-11-24
 
-**Breaking Change:** Upgrade ZigBee Toolkit (ZBTK) to major version 2, implicitly requiring the minimum Node.js version to be 20 now. The major change in upgrading the toolkit version to 2, was that the toolkit no longer captures own data, but requires a piped-in (P)CAP stream. This opens up the framework (and ViLocal implicitly) for more [supported & tested capture devices](https://github.com/kristian/zbtk/blob/main/docs/tested-capture-devices.md). However this will require to change your ViLocal installation, to switch over to the new pipe mechanism. The old `device` (and `buffer_size`) options in the configuration are no longer supported.
+Breaking Change: Upgrade ZigBee Toolkit (ZBTK) to major version 2, implicitly requiring the minimum Node.js version to be 20 now. The major change in upgrading the toolkit version to 2, was that the toolkit no longer captures own data, but requires a piped-in (P)CAP stream. This opens up the framework (and ViLocal implicitly) for more [supported & tested capture devices](https://github.com/kristian/zbtk/blob/main/docs/tested-capture-devices.md). However this will require to change your ViLocal installation, to switch over to the new pipe mechanism. The old `device` (and `buffer_size`) options in the configuration are no longer supported.
 
 ## [1.2] - 2025-02-19
 

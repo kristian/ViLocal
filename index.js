@@ -164,7 +164,7 @@ async function publishDevice(eui, type, id, options) {
   knownDevices.add(hexEui);
 
   function discoveryComponent(suffix, platform, options) {
-    if (!options) {
+    if (options === undefined) {
       options = platform;
       platform = suffix;
       suffix = '';
@@ -174,6 +174,12 @@ async function publishDevice(eui, type, id, options) {
       suffix = `_${suffix}`;
     }
     const unique_id = `vilocal_${hexEui}${endpoint ? `_${endpoint}` : ''}${suffix}`;
+
+    if (options === null) {
+      // a platform-only entry tells Home Assistant to remove the previously discovered entity
+      // with this ID, for example when command forwarding is disabled after adding the switch
+      return { [unique_id]: { platform } };
+    }
 
     return {
       [unique_id]: {
@@ -305,6 +311,16 @@ async function publishDevice(eui, type, id, options) {
         state_topic: `${deviceTopic}/0x0201/0x4000`, // Thermostat / Manufacturer Specific (OpenWindowDetection)
         value_template: '{{ "ON" if (value | int) == 3 else "OFF" }}'
       }),
+      ...discoveryComponent('external_window_open', 'switch',
+        passThrough ? {
+          name: 'External Window Open',
+          icon: 'mdi:window-open-variant',
+          state_topic: `${deviceTopic}/0x0201/0x4003`,
+          command_topic: `${deviceTopic}/0x0201/0x4003/set`,
+          payload_on: 'true',
+          payload_off: 'false',
+          optimistic: !router
+        } : null),
       ...discoveryComponent('heating_demand', 'sensor', {
         name: 'Heating Demand', // will automatically get prefixed with the device name
 
@@ -346,7 +362,7 @@ async function publishDevice(eui, type, id, options) {
         unit_of_measurement: '%',
         state_topic: `${deviceTopic}/0x0008/0x4010`, // Level Control / Requested Output
         ...(passThrough
-          ? { command_topic: `${deviceTopic}/0x0008/0x4010/set`, min: 0, max: 100, step: 1 }
+          ? { command_topic: `${deviceTopic}/0x0008/0x4010/set`, min: 0, max: 100, step: 1, optimistic: !router }
           : { state_class: 'measurement' })
       }),
       ...discoveryComponent('output_active', 'binary_sensor', {
@@ -441,10 +457,6 @@ async function publishDevice(eui, type, id, options) {
     JSON.stringify(discovery), { retain: true });
 }
 
-await iterateDevices(async (type, id, options) => {
-  await publishDevice(fromHex(options.serial_no), type, id, options);
-});
-
 let router;
 if (env.VILOCAL_ROUTER_SOCKET && (passThrough || routerRequests)) {
   router = createRouterClient(env.VILOCAL_ROUTER_SOCKET, {
@@ -453,6 +465,10 @@ if (env.VILOCAL_ROUTER_SOCKET && (passThrough || routerRequests)) {
 }
 
 const passThroughFormat = router ? 'ember-router' : config.pass_through_format ?? 'json';
+
+await iterateDevices(async (type, id, options) => {
+  await publishDevice(fromHex(options.serial_no), type, id, options);
+});
 
 function findDeviceAddress(eui) {
   const addr = Object.entries(addressTable).find(([, value]) => Buffer.compare(value, eui) === 0)?.[0];
@@ -507,6 +523,9 @@ if (passThrough) {
         let value, manufacturerCode;
         if (clusterId === 0x0201 && attributeId === 0x0012) { // Thermostat / Occupied Heating Setpoint
           value = Math.round(parseFloat(message.payload) * 100);
+        } else if (clusterId === 0x0201 && attributeId === 0x4003) { // Thermostat / External Window Open
+          value = { type: 0x10, value: JSON.parse(message.payload) };
+          manufacturerCode = zigbeeManufacturerCode;
         } else if (clusterId === 0x0008 && attributeId === 0x4010 && message.endpoint !== undefined) { // Viessmann Level Control / Requested Output
           value = { type: 0x20, value: JSON.parse(message.payload) };
           manufacturerCode = zigbeeManufacturerCode;
@@ -544,7 +563,10 @@ if (passThrough) {
     resendMessage = null;
   });
 
-  await mqttClient.subscribeAsync(`${mqttTopic}/+/+/+/set`); // device EUI (optionally :endpoint) / cluster / attribute / set
+  await mqttClient.subscribeAsync(`${mqttTopic}/+/+/+/set`,
+    // in MQTT protocol version 5, we can specify to essentially "ignore" retain for set message
+    mqttClient.options?.protocolVersion === 5 ? { rap: true, rh: 2 } : {}
+  ); // device EUI (optionally :endpoint) / cluster / attribute / set
   mqttClient.on('message', async (topic, message, packet) => {
     if (packet?.retain || !topic.startsWith(`${mqttTopic}/`) || !topic.endsWith('/set')) {
       return;
@@ -605,8 +627,15 @@ const capEmitter = await processCap(config.named_pipe ?? stdin, {
     mqtt: {
       client: mqttClient,
       topic: (topic, { eui, cluster, packet, write, attr }) => {
-        const aps = (packet.wpan ?? packet).zbee_nwk?.zbee_aps,
-          endpoint = write ? aps?.dst : aps?.src, clusterId = cluster.readUInt16BE(0);
+        const nwk = (packet.wpan ?? packet).zbee_nwk, aps = nwk?.zbee_aps, endpoint = write ? aps?.dst : aps?.src,
+          clusterId = cluster.readUInt16BE(0), attrId = attr.id.readUInt16BE(0);
+        if (router && write && nwk?.src?.readUInt16LE(0) !== 0x0000) { // keep writes from the ViCare coordinator
+          switch (true) {
+            case clusterId === 0x0008 && attrId === 0x4010: // Level Control / Requested Output
+            case clusterId === 0x0201 && attrId === 0x4003: // Thermostat / External Window Open
+              return false; // wait for the write response instead of publishing the captured request
+          }
+        }
         if (!eui || endpoint === undefined || clusterId !== 0x0008) { // Level Control
           return `${mqttTopic}/${topic.slice(topic.indexOf('/') + 1)}`;
         }

@@ -26,7 +26,7 @@ Any captured attributes are then sent to your local (or remote, heck...) MQTT Br
 > [!NOTE]
 > Whilst only certain attributes are being visualized through the device discovery feature, all parameters read from, written to, or reported by your devices will be published via MQTT. This includes all hidden / vendor-specific attributes of our Viessmann ViCare devices.
 
-ViLocal uses passive capture to monitor thermostats and climate sensors. To change a thermostat setpoint, you can opt into [forwarding commands to a Zigbee router](#5-optional-enable-thermostat-writes).
+ViLocal uses passive capture to monitor thermostats and climate sensors. To change a thermostat setpoint or use an external window sensor, you can opt into [forwarding commands to a Zigbee router](#5-optional-enable-thermostat-writes).
 
 ## Set-Up / Installation
 
@@ -304,7 +304,7 @@ Congratulations! You just set-up a fully local integration of your ViCare thermo
 
 ### 5. Optional: Enable Thermostat Writes
 
-Use [Ember Router](https://github.com/kristian/ember-router) to send heating setpoint commands from MQTT to the ViCare network. ViLocal still reads attributes from sniffed traffic. You can use separate adapters or share one Ember adapter by alternating between capture and writes.
+Use [Ember Router](https://github.com/kristian/ember-router) to send thermostat commands from MQTT to the ViCare network. ViLocal still reads attributes from sniffed traffic. You can use separate adapters or share one Ember adapter by alternating between capture and writes.
 
 #### Set Up Ember Router
 
@@ -427,7 +427,34 @@ Append `/read` or `/write` to the attribute’s MQTT state topic, `<mqttBase>/<E
 
 Send write values as JSON in the attribute’s Zigbee units. If ViLocal cannot infer the data type, include it with the value. For example, `{"type":"0x29","value":2200}` specifies a signed 16-bit integer.
 
+For a manufacturer-specific attribute, include `manufacturerCode` as a number or a `0x`-prefixed hex string. A read takes `{"manufacturerCode":"0x1221"}`. A write takes the code alongside the explicit `type` and `value`, for example `{"manufacturerCode":"0x1221","type":"0x10","value":true}`.
+
 ViLocal publishes read results and acknowledged write values to the attribute’s state topic. Send a `/read` request to check the value on the device after a write.
+
+### External Window Open
+
+With command forwarding to Ember Router enabled, use the "External Window Open" switch in Home Assistant to send a contact sensor's state to a ViCare radiator thermostat (ZK03840). Allow about 1–2 minutes for the thermostat and ViCare to reflect the change.
+
+For direct MQTT control, publish `true` or `false` without retain to `<mqttBase>/<EUI>/0x0201/0x4003/set`. The "Window Open" sensor shows the thermostat's reported state.
+
+Replace the entity IDs in this example with your contact sensor and thermostat switch.
+
+```yaml
+alias: Set bedroom radiator window state
+triggers:
+  - trigger: state
+    entity_id: binary_sensor.bedroom_window
+    to: "on"
+    id: turn_on
+  - trigger: state
+    entity_id: binary_sensor.bedroom_window
+    to: "off"
+    id: turn_off
+actions:
+  - action: "switch.{{ trigger.id }}"
+    target:
+      entity_id: switch.vilocal_thermostat_bedroom_external_window_open
+```
 
 ### Thermostat Valve Positions
 

@@ -24,7 +24,7 @@ export function attributeCommand(action, clusterId, attributeId, sequence, value
         throw new Error('An explicit Zigbee write requires a value.');
       }
     } else {
-      type = getCluster(clusterId)?.attr?.(attributeId)?.type;
+      type = manufacturerCode === undefined ? getCluster(clusterId)?.attr?.(attributeId)?.type : undefined;
       if (type === undefined) {
         throw new Error('No Zigbee data type is known for this attribute. Supply JSON with type and value.');
       }
@@ -86,6 +86,17 @@ function confirmedValue(reply, action, attributeId, sequence, written) {
   throw new Error('Unexpected Zigbee attribute response.');
 }
 
+function parseManufacturerCode(code) {
+  if (code === undefined || (Number.isInteger(code) && code >= 0 && code <= 0xffff)) {
+    return code;
+  }
+  if (typeof code === 'string' && /^0x[\da-f]{1,4}$/i.test(code)) {
+    return Number(code);
+  }
+
+  throw new Error('A Zigbee manufacturer code must be a 16-bit integer or 0x-prefixed hex string.');
+}
+
 export function subscribeAttributeCommands({ mqttClient, mqttTopic, router, resolveDestination, nextSequence, publishAttribute }) {
   const prefix = mqttTopic.replace(/\/+$/, '') + '/';
   const euiPattern = /^(?:[\da-f]{2}-){7}[\da-f]{2}$/i;
@@ -109,12 +120,15 @@ export function subscribeAttributeCommands({ mqttClient, mqttTopic, router, reso
         throw new Error(`No network address observed for ${eui}.`);
       }
 
-      if (action === 'read' && message.length) {
-        throw new Error('An attribute read requires an empty MQTT payload.');
-      }
       const clusterId = Number(cluster), attributeId = Number(attribute);
-      const value = action === 'write' ? JSON.parse(message.toString()) : undefined;
-      const { payload, confirm } = attributeCommand(action, clusterId, attributeId, await nextSequence(), value);
+      const request = action === 'read' && message.length === 0 ? undefined : JSON.parse(message.toString());
+      const manufacturerCode = parseManufacturerCode(request?.manufacturerCode);
+      if (action === 'read' && request !== undefined && manufacturerCode === undefined) {
+        throw new Error('An attribute read requires an empty MQTT payload or JSON with manufacturerCode.');
+      }
+
+      const { payload, confirm } = attributeCommand(action, clusterId, attributeId, await nextSequence(),
+        action === 'read' ? undefined : request, { manufacturerCode });
       const reply = await router.request({ destination, clusterId, payload });
       await publishAttribute(eui, cluster, attribute, confirm(reply));
     } catch (error) {
@@ -123,8 +137,10 @@ export function subscribeAttributeCommands({ mqttClient, mqttTopic, router, reso
   }
 
   mqttClient.on('message', onMessage);
-  const options = mqttClient.options?.protocolVersion === 5 ? { rap: true, rh: 2 } : {};
-  return mqttClient.subscribeAsync([`${prefix}+/+/+/read`, `${prefix}+/+/+/write`], options).catch(error => {
+  return mqttClient.subscribeAsync([`${prefix}+/+/+/read`, `${prefix}+/+/+/write`],
+    // in MQTT protocol version 5, we can specify to essentially "ignore" retain for read/write messages
+    mqttClient.options?.protocolVersion === 5 ? { rap: true, rh: 2 } : {}
+  ).catch(error => {
     mqttClient.off('message', onMessage);
     console.warn(`Could not enable MQTT attribute requests: ${error.message}`);
   });
