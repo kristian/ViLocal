@@ -2,14 +2,14 @@ import getCluster from 'zbtk/cluster';
 import { parse } from 'zbtk/parse';
 import { data } from 'zbtk/type';
 
-export function attributeCommand(action, clusterId, attributeId, sequence, value, { manufacturerCode } = {}) {
-  const command = action === 'read' ? 0x00 : 0x02;
-  const header = manufacturerCode === undefined
-    ? Buffer.from([0x10, sequence, command, 0, 0])
-    : Buffer.from([0x04, manufacturerCode & 0xff, manufacturerCode >> 8, sequence, command, 0, 0]);
-  header.writeUInt16LE(attributeId, header.length - 2);
+export function attributeCommand(action, clusterId, attrId, seqNo, value, { mfgCode } = {}) {
+  const cmdId = action === 'read' ? 0x00 : 0x02;
+  const hdr = mfgCode === undefined
+    ? Buffer.from([0x10, seqNo, cmdId, 0, 0])
+    : Buffer.from([0x04, mfgCode & 0xff, mfgCode >> 8, seqNo, cmdId, 0, 0]);
+  hdr.writeUInt16LE(attrId, hdr.length - 2);
 
-  let payload = header, written;
+  let payload = hdr, written;
   if (action === 'write') {
     let type;
     if (value && typeof value === 'object' && Object.hasOwn(value, 'type')) {
@@ -24,7 +24,7 @@ export function attributeCommand(action, clusterId, attributeId, sequence, value
         throw new Error('An explicit Zigbee write requires a value.');
       }
     } else {
-      type = manufacturerCode === undefined ? getCluster(clusterId)?.attr?.(attributeId)?.type : undefined;
+      type = mfgCode === undefined ? getCluster(clusterId)?.attr?.(attrId)?.type : undefined;
       if (type === undefined) {
         throw new Error('No Zigbee data type is known for this attribute. Supply JSON with type and value.');
       }
@@ -35,13 +35,13 @@ export function attributeCommand(action, clusterId, attributeId, sequence, value
       throw new Error(`Unsupported Zigbee data type 0x${type.toString(16)}.`);
     }
     const bytes = codec.encode(value);
-    payload = Buffer.concat([header, Buffer.from([type]), bytes]);
+    payload = Buffer.concat([hdr, Buffer.from([type]), bytes]);
     written = codec.decode(bytes);
   }
 
   return {
     payload: payload.toString('hex'),
-    confirm: reply => confirmedValue(reply, action, attributeId, sequence, written)
+    confirm: reply => confirmedValue(reply, action, attrId, seqNo, written)
   };
 }
 
@@ -54,18 +54,18 @@ function checkStatus(status) {
   }
 }
 
-function confirmedValue(reply, action, attributeId, sequence, written) {
+function confirmedValue(reply, action, attrId, seqNo, written) {
   if (!reply?.payload) {
     throw new Error('No Zigbee attribute response received.');
   }
   const { fc, cmd, attrs, status } = parse(Buffer.from(reply.payload, 'hex'), 'zbee_zcl');
-  if (fc.type !== 0 || fc.dir !== 1 || cmd.tsn !== sequence) {
+  if (fc.type !== 0 || fc.dir !== 1 || cmd.tsn !== seqNo) {
     throw new Error('Zigbee response does not match the attribute request.');
   }
 
-  const command = cmd.id[0];
-  if (action === 'read' && command === 0x01) {
-    const attr = attrs.find(record => record.id.readUInt16LE(0) === attributeId);
+  const cmdId = cmd.id[0];
+  if (action === 'read' && cmdId === 0x01) {
+    const attr = attrs.find(record => record.id.readUInt16LE(0) === attrId);
     if (!attr) {
       throw new Error('Zigbee read response does not include the requested attribute.');
     }
@@ -76,8 +76,8 @@ function confirmedValue(reply, action, attributeId, sequence, written) {
     return attr.value;
   }
 
-  const defaultResponse = command === 0x0b && cmd.id_rsp?.[0] === (action === 'read' ? 0x00 : 0x02);
-  if (defaultResponse || (action === 'write' && command === 0x04)) {
+  const defaultResponse = cmdId === 0x0b && cmd.id_rsp?.[0] === (action === 'read' ? 0x00 : 0x02);
+  if (defaultResponse || (action === 'write' && cmdId === 0x04)) {
     checkStatus(status?.[0]);
     if (action === 'write') {
       return written;
@@ -97,7 +97,7 @@ function parseManufacturerCode(code) {
   throw new Error('A Zigbee manufacturer code must be a 16-bit integer or 0x-prefixed hex string.');
 }
 
-export function subscribeAttributeCommands({ mqttClient, mqttTopic, router, resolveDestination, nextSequence, publishAttribute }) {
+export function subscribeAttributeCommands({ mqttClient, mqttTopic, router, resolveDest, nextSeqNo, pubAttr }) {
   const prefix = mqttTopic.replace(/\/+$/, '') + '/';
   const euiPattern = /^(?:[\da-f]{2}-){7}[\da-f]{2}$/i;
   const idPattern = /^0x[\da-f]{4}$/i;
@@ -106,31 +106,31 @@ export function subscribeAttributeCommands({ mqttClient, mqttTopic, router, reso
     if (!topic.startsWith(prefix) || packet?.retain) {
       return;
     }
-    const [eui, cluster, attribute, action, ...rest] = topic.slice(prefix.length).split('/');
+    const [eui, cluster, attr, action, ...rest] = topic.slice(prefix.length).split('/');
     if (rest.length || (action !== 'read' && action !== 'write')) {
       return;
     }
 
     try {
-      if (!euiPattern.test(eui) || !idPattern.test(cluster) || !idPattern.test(attribute)) {
+      if (!euiPattern.test(eui) || !idPattern.test(cluster) || !idPattern.test(attr)) {
         throw new Error('Expected a device EUI, cluster ID and attribute ID.');
       }
-      const destination = resolveDestination(eui);
-      if (destination === undefined) {
+      const dest = resolveDest(eui);
+      if (dest === undefined) {
         throw new Error(`No network address observed for ${eui}.`);
       }
 
-      const clusterId = Number(cluster), attributeId = Number(attribute);
-      const request = action === 'read' && message.length === 0 ? undefined : JSON.parse(message.toString());
-      const manufacturerCode = parseManufacturerCode(request?.manufacturerCode);
-      if (action === 'read' && request !== undefined && manufacturerCode === undefined) {
-        throw new Error('An attribute read requires an empty MQTT payload or JSON with manufacturerCode.');
+      const clusterId = Number(cluster), attrId = Number(attr);
+      const req = action === 'read' && message.length === 0 ? undefined : JSON.parse(message.toString());
+      const mfgCode = parseManufacturerCode(req?.manufacturer);
+      if (action === 'read' && req !== undefined && mfgCode === undefined) {
+        throw new Error('An attribute read requires an empty MQTT payload or JSON with manufacturer.');
       }
 
-      const { payload, confirm } = attributeCommand(action, clusterId, attributeId, await nextSequence(),
-        action === 'read' ? undefined : request, { manufacturerCode });
-      const reply = await router.request({ destination, clusterId, payload });
-      await publishAttribute(eui, cluster, attribute, confirm(reply));
+      const { payload, confirm } = attributeCommand(action, clusterId, attrId, await nextSeqNo(),
+        action === 'read' ? undefined : req, { mfgCode });
+      const reply = await router.request({ destination: dest, clusterId, payload });
+      await pubAttr(eui, cluster, attr, confirm(reply));
     } catch (error) {
       console.warn(`Could not complete MQTT attribute request on ${topic}: ${error.message}`);
     }

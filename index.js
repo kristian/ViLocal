@@ -30,7 +30,7 @@ import { createRouterClient } from 'ember-router/client';
 import { subscribeAttributeCommands, attributeCommand } from './attribute-commands.js';
 import { monitorValvePositions, valvePositionTemplates, valvePositionTopics } from './valve-positions.js';
 import packageJson from './package.json' with { type: 'json' };
-const zigbeeManufacturerCode = 0x1221; // Viessmann Elektronik GmbH
+const defaultMfgCode = 0x1221; // Viessmann Elektronik GmbH
 
 // zbtk uses console.log for capture diagnostics. Reserve stdout for pass-through commands.
 console.log = console.info = console.debug = console.error;
@@ -470,7 +470,7 @@ await iterateDevices(async (type, id, options) => {
   await publishDevice(fromHex(options.serial_no), type, id, options);
 });
 
-function findDeviceAddress(eui) {
+function findDeviceAddr(eui) {
   const addr = Object.entries(addressTable).find(([, value]) => Buffer.compare(value, eui) === 0)?.[0];
   return addr ? fromHex(addr, /* reverse=*/true) : undefined;
 }
@@ -519,22 +519,22 @@ if (passThrough) {
         }
 
         const clusterId = fromHex(message.cluster).readUInt16BE(0),
-          attributeId = fromHex(message.attribute).readUInt16BE(0);
-        let value, manufacturerCode;
-        if (clusterId === 0x0201 && attributeId === 0x0012) { // Thermostat / Occupied Heating Setpoint
+          attrId = fromHex(message.attribute).readUInt16BE(0);
+        let value, mfgCode;
+        if (clusterId === 0x0201 && attrId === 0x0012) { // Thermostat / Occupied Heating Setpoint
           value = Math.round(parseFloat(message.payload) * 100);
-        } else if (clusterId === 0x0201 && attributeId === 0x4003) { // Thermostat / External Window Open
+        } else if (clusterId === 0x0201 && attrId === 0x4003) { // Thermostat / External Window Open
           value = { type: 0x10, value: JSON.parse(message.payload) };
-          manufacturerCode = zigbeeManufacturerCode;
-        } else if (clusterId === 0x0008 && attributeId === 0x4010 && message.endpoint !== undefined) { // Viessmann Level Control / Requested Output
+          mfgCode = defaultMfgCode;
+        } else if (clusterId === 0x0008 && attrId === 0x4010 && message.endpoint !== undefined) { // Viessmann Level Control / Requested Output
           value = { type: 0x20, value: JSON.parse(message.payload) };
-          manufacturerCode = zigbeeManufacturerCode;
+          mfgCode = defaultMfgCode;
         } else {
           console.warn(`Unsupported cluster ${message.cluster} and / or attribute ${message.attribute} to pass-through to ember-router`);
           return;
         }
-        const { payload, confirm } = attributeCommand('write', clusterId, attributeId, await nextEmberRouterSeqNo(), value,
-          { manufacturerCode });
+        const { payload, confirm } = attributeCommand('write', clusterId, attrId, await nextEmberRouterSeqNo(), value,
+          { mfgCode });
         const packet = {
           destination: message.addr.readUInt16BE(0),
           destinationEndpoint: message.endpoint ?? 1,
@@ -545,7 +545,7 @@ if (passThrough) {
 
         if (router) {
           router.request(packet)
-            .then(reply => publishAttribute(message.formattedEui, message.cluster, message.attribute, confirm(reply), message.endpoint))
+            .then(reply => pubAttr(message.formattedEui, message.cluster, message.attribute, confirm(reply), message.endpoint))
             .catch(error => console.warn('Could not write to thermostat: ' + error.message));
         } else {
           passThroughOutput.write(encodePacket(packet));
@@ -572,13 +572,13 @@ if (passThrough) {
       return;
     }
 
-    const [deviceKey, cluster, attribute, extraDash] = topic.slice(mqttTopic.length + 1, -4).split('/');
-    if (!deviceKey || deviceKey.startsWith(':') || !cluster || !attribute || extraDash !== undefined) {
+    const [deviceKey, cluster, attr, extraDash] = topic.slice(mqttTopic.length + 1, -4).split('/');
+    if (!deviceKey || deviceKey.startsWith(':') || !cluster || !attr || extraDash !== undefined) {
       return;
     }
 
     const [formattedEui, endpointStr, extraColon] = deviceKey.split(':'), eui = fromHex(formattedEui, /* reverse=*/true),
-      endpoint = endpointStr ? Number(endpointStr) : undefined, addr = findDeviceAddress(eui);
+      endpoint = endpointStr ? Number(endpointStr) : undefined, addr = findDeviceAddr(eui);
     if (extraColon !== undefined) {
       return;
     }
@@ -586,7 +586,7 @@ if (passThrough) {
     (resendMessage = async () => {
       try {
         await passThroughWrite({
-          eui, formattedEui, addr, cluster, attribute, payload: message.toString(), topic, endpoint
+          eui, formattedEui, addr, cluster, attribute: attr, payload: message.toString(), topic, endpoint
         });
       } catch (error) {
         console.warn(`Could not forward ${topic}: ${error.message}`);
@@ -595,11 +595,10 @@ if (passThrough) {
   });
 }
 
-const formatAttributeBuffer = buffer => bufferFormat(buffer, config.buffer_format ?? 'hex');
-
-async function publishAttribute(eui, cluster, attribute, value, endpoint) {
-  const formattedValue = Buffer.isBuffer(value) ? formatAttributeBuffer(reverseEndian(value)) : value;
-  const topic = `${mqttTopic}/${formatEui(eui)}${endpoint ? `:${endpoint}` : ''}/${cluster.toLowerCase()}/${attribute.toLowerCase()}`;
+const formatAttrBuffer = buffer => bufferFormat(buffer, config.buffer_format ?? 'hex');
+async function pubAttr(eui, cluster, attr, value, endpoint) {
+  const formattedValue = Buffer.isBuffer(value) ? formatAttrBuffer(reverseEndian(value)) : value;
+  const topic = `${mqttTopic}/${formatEui(eui)}${endpoint ? `:${endpoint}` : ''}/${cluster.toLowerCase()}/${attr.toLowerCase()}`;
   await mqttClient.publishAsync(topic, Buffer.isBuffer(formattedValue) ? formattedValue : String(formattedValue),
     { retain: config.retain_state ?? false });
   await valvePositions.update(topic, value);
@@ -608,9 +607,9 @@ async function publishAttribute(eui, cluster, attribute, value, endpoint) {
 if (routerRequests && router) {
   await subscribeAttributeCommands({
     mqttClient, mqttTopic, router,
-    resolveDestination: eui => findDeviceAddress(fromHex(eui, /* reverse=*/true))?.readUInt16BE(0),
-    nextSequence: nextEmberRouterSeqNo,
-    publishAttribute
+    resolveDest: eui => findDeviceAddr(fromHex(eui, /* reverse=*/true))?.readUInt16BE(0),
+    nextSeqNo: nextEmberRouterSeqNo,
+    pubAttr
   });
 }
 
@@ -620,7 +619,7 @@ config.network_key && pk(config.network_key);
 // process capture packets
 const capEmitter = await processCap(config.named_pipe ?? stdin, {
   unwrapLayers: config.unwrap_layers ?? [],
-  bufferFormat: formatAttributeBuffer,
+  bufferFormat: formatAttrBuffer,
   emit: ['attribute'],
   out: {
     log: [config.log_level ?? 'warn'].flat(),

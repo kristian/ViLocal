@@ -45,9 +45,9 @@ const server = createServer({ allowHalfOpen: true }, async socket => {
   try {
     for await (const frame of readFrames(socket)) {
       // each handoff consumes its reply even if the requesting client disconnects.
-      const request = pending.then(() => closed || socket.destroyed ? undefined : exchange(frame));
-      pending = request.catch(close);
-      const reply = await request;
+      const req = pending.then(() => closed || socket.destroyed ? undefined : exchange(frame));
+      pending = req.catch(close);
+      const reply = await req;
       if (!reply || socket.destroyed) {
         return;
       }

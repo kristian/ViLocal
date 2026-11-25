@@ -55,7 +55,7 @@ writer_pid=
 command_relay_pid=
 write_timeout=30s
 keepalive_interval=${ROUTER_KEEPALIVE_SECONDS:-0}
-keepalive_sequence=$((RANDOM & 0xff))
+keepalive_seq_no=$((RANDOM & 0xff))
 
 keepalive_args=()
 if [[ -n "$SOCKET" ]] && ((keepalive_interval)); then
@@ -219,10 +219,10 @@ send_keepalive() {
   fi
 
   local payload
-  keepalive_sequence=$(((keepalive_sequence + 1) & 0xff))
+  keepalive_seq_no=$(((keepalive_seq_no + 1) & 0xff))
   # report the Basic cluster Power Source (DC) advertised during pairing to the coordinator.
   # this server-to-client report uses its own ZCL sequence and disables the success default response.
-  printf -v payload '18%02x0a07003004' "$keepalive_sequence"
+  printf -v payload '18%02x0a07003004' "$keepalive_seq_no"
   if (
     cd -- "$script_dir" &&
       node --require ./.pnp.cjs --loader ./.pnp.loader.mjs --disable-warning=ExperimentalWarning --input-type=module -e '

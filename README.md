@@ -427,7 +427,7 @@ Append `/read` or `/write` to the attribute’s MQTT state topic, `<mqttBase>/<E
 
 Send write values as JSON in the attribute’s Zigbee units. If ViLocal cannot infer the data type, include it with the value. For example, `{"type":"0x29","value":2200}` specifies a signed 16-bit integer.
 
-For a manufacturer-specific attribute, include `manufacturerCode` as a number or a `0x`-prefixed hex string. A read takes `{"manufacturerCode":"0x1221"}`. A write takes the code alongside the explicit `type` and `value`, for example `{"manufacturerCode":"0x1221","type":"0x10","value":true}`.
+For a manufacturer-specific attribute, include `manufacturer` as a number or a `0x`-prefixed hex string. A read takes `{"manufacturer":"0x1221"}`. A write takes the code alongside the explicit `type` and `value`, for example `{"type":"0x10","manufacturer":"0x1221","value":true}`.
 
 ViLocal publishes read results and acknowledged write values to the attribute’s state topic. Send a `/read` request to check the value on the device after a write.
 
