@@ -488,7 +488,13 @@ Before ViCare can show the valve position of thermostats, ViLocal needs to obser
 ViLocal learns the valve's range by watching it open and close during everyday heating and remembers that range across restarts. When ViCare calibrates the valve, the thermostat moves through a series of positions called a calibration sweep. Watching this sweep helps ViLocal learn the range sooner.
 
 > [!TIP]
-> Try moving the valve through its full range to help ViLocal learn the valve's limits faster. E.g. by setting the thermostat to its minimum and maximum heating setpoints once. The valve positions should start showing right after.
+> Try moving the valve through its full range to help ViLocal learn the valve's limits faster.
+>
+> To help ViLocal learn the valve’s range, set the radiator thermostat to its lowest and highest heating setpoints in turn. Give the valve time to settle at each setting, then restore your usual setpoint.
+>
+>You can also try cycling Installation Mode. With the thermostat mounted, hold the operating button for about 3 seconds until -- appears. Then hold it again for at least 3 seconds until the temperature setpoint returns. If this starts a calibration sweep, ViLocal can use it to learn the valve’s range.
+>
+> Home Assistant shows the valve percentages once ViLocal has captured enough valve movement.
 
 ## Author & Supporters
 

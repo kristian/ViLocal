@@ -21,13 +21,17 @@
  * position sooner and provides an estimate of the full range.
  */
 
-const VALVE_TRAVEL = 600; // nominal motor steps from fully closed to fully open.
-const MIN_ESTIMATED_TRAVEL = 500; // show an estimate once observed travel exceeds this many steps.
+const VALVE_TRAVEL = 600; // nominal motor steps from fully closed to fully open
+const MIN_ESTIMATED_TRAVEL = 500; // show an estimate once observed travel exceeds this many steps
 
-const CALIBRATION_TARGET = 1; // target position that signals calibration.
-const CALIBRATION_STEP = 5; // motor steps between sweep targets.
-const CALIBRATION_STEP_INTERVAL = 60_000; // approximate milliseconds per sweep step for estimating missed updates.
-const CALIBRATION_STEP_TOLERANCE = 1; // extra sweep steps allowed beyond the time-based estimate.
+const INSTALLATION_POSITION = 0; // reported in installation mode, e.g. after a battery change
+const CLEANING_POSITION = 2000; // reported during the weekly anti-blocking routine
+const ignoredPositions = [INSTALLATION_POSITION, CLEANING_POSITION];
+
+const CALIBRATION_TARGET = 1; // target position that signals calibration
+const CALIBRATION_STEP = 5; // motor steps between sweep targets
+const CALIBRATION_STEP_INTERVAL = 60_000; // approximate milliseconds per sweep step for estimating missed updates
+const CALIBRATION_STEP_TOLERANCE = 1; // extra sweep steps allowed beyond the time-based estimate
 
 export const valvePositionTopics = {
   actual: '0x0201/0x4008',
@@ -45,11 +49,13 @@ export const valvePositionTemplates = {
     {{- 'true' if ${usableRangeTemplate} else 'false' -}}
   `,
   value: `
-    {%- set low = state_attr(entity_id, 'low') -%}
-    {%- set high = state_attr(entity_id, 'high') -%}
     {%- set raw = value | int(none) -%}
-    {{- ((raw - low) * 100 / ${VALVE_TRAVEL}) | round(0, 'ceil') | int
-        if ${usableRangeTemplate} and raw is integer and low <= raw <= high else none -}}
+    {%- if raw not in [${ignoredPositions.join(', ')}] -%}
+      {%- set low = state_attr(entity_id, 'low') -%}
+      {%- set high = state_attr(entity_id, 'high') -%}
+      {{- ((raw - low) * 100 / ${VALVE_TRAVEL}) | round(0, 'ceil') | int
+          if ${usableRangeTemplate} and raw is integer and low <= raw <= high else none -}}
+    {%- endif -%}
   `
 };
 
@@ -247,9 +253,10 @@ export async function monitorValvePositions(mqttClient, mqttTopic, retainState =
     update(topic, value, observedAt = Date.now()) {
       const position = topic.endsWith(`/${valvePositionTopics.actual}`) ? 'actual'
         : topic.endsWith(`/${valvePositionTopics.target}`) ? 'target' : undefined;
-      if (!position || !isMotorPosition(value)) {
+      if (!position || !isMotorPosition(value) || ignoredPositions.includes(value)) {
         return;
       }
+
       const deviceTopic = topic.slice(0, -valvePositionTopics[position].length - 1);
       latestReadings.set(topic, value);
       return enqueue(async () => {
