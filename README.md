@@ -197,7 +197,7 @@ climate_sensor_serial_no = "FF-EE-DD-CC-BB-AA-00-00"
 
 #### Floor Thermostats
 
-Configure one `[floor_thermostats.<id>]` entry for each controller endpoint you want to expose in Home Assistant. Choose a unique ID for each entry, such as `bathroom` in the example below. Set `serial_no` to the controller's serial number or EUI-64 and `endpoint` to the Zigbee endpoint number. Entries on the same controller share `serial_no`.
+Configure one `[floor_thermostats.<id>]` entry per ViCare zone. Repeat the controller's eight-byte `serial_no` for each of its zones and set `endpoint` to the zone's Zigbee endpoint as a decimal number.
 
 ```toml
 [floor_thermostats.bathroom]
@@ -206,15 +206,21 @@ endpoint = 5
 name = "Bathroom"
 suggested_area = "Bathroom"
 climate_sensor_serial_no = "FF-EE-DD-CC-BB-AA-00-00"
+
+[floor_thermostats.kitchen]
+serial_no = "AB-CD-EF-12-34-56-78-91"
+endpoint = 4
+name = "Kitchen"
+suggested_area = "Kitchen"
 ```
 
-Home Assistant shows Requested Output Level and Output Active separately for each configured floor thermostat. Set `climate_sensor_serial_no` to display the room temperature and humidity from an associated ViCare climate sensor.
+In Home Assistant, each configured zone is linked to its floor controller and shows Requested Output Level and Output Active. Set `suggested_area` for the zone and `climate_sensor_serial_no` to show room temperature and humidity from an associated ViCare climate sensor.
 
-To send requested output levels from Home Assistant, enable command forwarding and use a paired Ember Router. With `pass_through_commands = false`, the requested output is read-only in Home Assistant. A write changes the actuator's requested output. Vitoconnect can replace that request on its next write. ViCare still manages room-temperature targets and schedules. [Enable Thermostat Writes](#5-optional-enable-thermostat-writes)
+ViLocal adds the floor controller when you configure any of its zones. The controller shows diagnostics and a read-only Supply Temperature sensor for the manifold supply pipe.
 
-With `--router`, a successful write response updates the requested level. The output state follows the controller's report. With a shared adapter, capture pauses for the write and can miss the immediate report, so the displayed output state can lag until the next report.
+To send requested output levels from Home Assistant, enable command forwarding and use a paired Ember Router. With `pass_through_commands = false`, the requested output is read-only. Vitoconnect can replace the requested level on its next update. ViCare still manages room-temperature targets and schedules. [Enable Thermostat Writes](#5-optional-enable-thermostat-writes)
 
-The requested level is published to `ViLocal/<controller-eui>:<endpoint>/0x0008/0x4010` and the reported state (`0` or `1`) to `ViLocal/<controller-eui>:<endpoint>/0x0008/0x4004`. Publish an integer from `0` to `100` to `ViLocal/<controller-eui>:<endpoint>/0x0008/0x4010/set` to request a level.
+With a shared adapter, Output Active can lag until the next controller report. For direct MQTT access, see [Floor Thermostat MQTT Topics](#floor-thermostat-mqtt-topics).
 
 #### Climate Sensors
 
@@ -420,7 +426,7 @@ Restart ViLocal to republish the Home Assistant discovery configuration. Capture
 
 ViLocal can send on-demand attribute reads and writes to devices on your ViCare Zigbee network. Start ViLocal with `--router` using a shared or dedicated adapter. MQTT requests are enabled by default. To disable them, set `router_requests = false` under `[mqtt]`.
 
-Append `/read` or `/write` to the attribute’s MQTT state topic, `<mqttBase>/<EUI>/<cluster>/<attribute>`. Publish requests with retain disabled.
+Append `/read` or `/write` to the attribute’s MQTT state topic, `<mqttBase>/<device-key>/<cluster>/<attribute>`. Use the device EUI-64 or the nine-byte zone ID for a floor thermostat zone. Publish requests with retain disabled.
 
 - Read a thermostat’s local temperature by publishing an empty payload to `ViLocal/28-DB-A7-FF-FE-23-C0-0E/0x0201/0x0000/read`.
 - Set a thermostat’s heating setpoint to 22 °C by publishing `2200` to `ViLocal/28-DB-A7-FF-FE-23-C0-0E/0x0201/0x0012/write`.
@@ -430,6 +436,14 @@ Send write values as JSON in the attribute’s Zigbee units. If ViLocal cannot i
 For a manufacturer-specific attribute, include `manufacturer` as a number or a `0x`-prefixed hex string. A read takes `{"manufacturer":"0x1221"}`. A write takes the code alongside the explicit `type` and `value`, for example `{"type":"0x10","manufacturer":"0x1221","value":true}`.
 
 ViLocal publishes read results and acknowledged write values to the attribute’s state topic. Send a `/read` request to check the value on the device after a write.
+
+#### Floor Thermostat MQTT Topics
+
+For zone topics, append the `endpoint` as a two-digit hexadecimal value to the controller serial. For example, endpoint `5` on `AB-CD-EF-12-34-56-78-91` uses `AB-CD-EF-12-34-56-78-91-05`.
+
+- Subscribe to `ViLocal/<zone-id>/0x0008/0x4010` for Requested Output Level and `ViLocal/<zone-id>/0x0008/0x4004` for Output Active (`0` or `1`).
+- Publish an integer from `0` to `100` to `ViLocal/<zone-id>/0x0008/0x4010/set` to request a level. With `--router`, an acknowledged write updates the requested level.
+- Subscribe to `ViLocal/<controller-eui>/0x0201/0x0000` for Supply Temperature in hundredths of a degree Celsius.
 
 ### External Window Open
 

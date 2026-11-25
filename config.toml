@@ -47,8 +47,6 @@ username = "user"
 password = "password"
 # base topic to publish attributes to, defaults to "ViLocal"
 # e.g.: ViLocal/<device_key>/<cluster_id>/<attr_id>
-# thermostats and climate sensors use the device EUI-64 as the device key
-# floor thermostats use <device_eui>:<endpoint> instead
 topic = "ViLocal"
 # retain a "online" topic, e.g. ViLocal/online, defaults to true / "online", set to a string to use a different topic
 # note: if set to false, home assistant will not be able to determine if the devices / entities are available
@@ -64,7 +62,7 @@ device_discovery_prefix = "homeassistant"
 # other broker options (see https://github.com/mqttjs/MQTT.js?tab=readme-ov-file#client options)
 #...
 
-# a list of thermostats, with a unique name e.g. "bedroom", "bathroom", "kitchen", etc. for each thermostat
+# thermostatic radiator valves (TRVs), with a unique name / ID e.g. "bedroom", "bathroom", "kitchen", etc. for each thermostat
 [thermostats]
 
 # example for a thermostat
@@ -79,10 +77,10 @@ suggested_area = "Bedroom"
 # optional serial number / EUI-64 Id of an associated climate sensor, for better temperature and humidity readings of the climate device
 climate_sensor_serial_no = "01-02-03-04-05-06-07-08"
 
-# a list of floor thermostats, with one entry per controller endpoint
+# a list of floor thermostats, one entry per valve / zone
 [floor_thermostats]
 
-# repeat the controller serial number to configure multiple endpoints on the same controller
+# repeat the floor thermostats serial number and set the endpoint to the zone number
 [floor_thermostats.bathroom]
 serial_no = "AB-CD-EF-12-34-56-78-91"
 endpoint = 5

@@ -1,6 +1,7 @@
 import getCluster from 'zbtk/cluster';
 import { parse } from 'zbtk/parse';
 import { data } from 'zbtk/type';
+import { parseDeviceKey } from './device-key.js';
 
 export function attributeCommand(action, clusterId, attrId, seqNo, value, { mfgCode } = {}) {
   const cmdId = action === 'read' ? 0x00 : 0x02;
@@ -99,25 +100,26 @@ function parseManufacturerCode(code) {
 
 export function subscribeAttributeCommands({ mqttClient, mqttTopic, router, resolveDest, nextSeqNo, pubAttr }) {
   const prefix = mqttTopic.replace(/\/+$/, '') + '/';
-  const euiPattern = /^(?:[\da-f]{2}-){7}[\da-f]{2}$/i;
   const idPattern = /^0x[\da-f]{4}$/i;
 
   async function onMessage(topic, message, packet) {
     if (!topic.startsWith(prefix) || packet?.retain) {
       return;
     }
-    const [eui, cluster, attr, action, ...rest] = topic.slice(prefix.length).split('/');
+    const [deviceKey, cluster, attr, action, ...rest] = topic.slice(prefix.length).split('/');
     if (rest.length || (action !== 'read' && action !== 'write')) {
       return;
     }
 
     try {
-      if (!euiPattern.test(eui) || !idPattern.test(cluster) || !idPattern.test(attr)) {
+      const device = parseDeviceKey(deviceKey);
+      if (!device || !idPattern.test(cluster) || !idPattern.test(attr)) {
         throw new Error('Expected a device EUI, cluster ID and attribute ID.');
       }
-      const dest = resolveDest(eui);
+      const { formattedEui, endpoint } = device;
+      const dest = resolveDest(formattedEui);
       if (dest === undefined) {
-        throw new Error(`No network address observed for ${eui}.`);
+        throw new Error(`No network address observed for ${formattedEui}.`);
       }
 
       const clusterId = Number(cluster), attrId = Number(attr);
@@ -129,8 +131,8 @@ export function subscribeAttributeCommands({ mqttClient, mqttTopic, router, reso
 
       const { payload, confirm } = attributeCommand(action, clusterId, attrId, await nextSeqNo(),
         action === 'read' ? undefined : req, { mfgCode });
-      const reply = await router.request({ destination: dest, clusterId, payload });
-      await pubAttr(eui, cluster, attr, confirm(reply));
+      const reply = await router.request({ destination: dest, destinationEndpoint: endpoint ?? 1, clusterId, payload });
+      await pubAttr(formattedEui, cluster, attr, confirm(reply), endpoint);
     } catch (error) {
       console.warn(`Could not complete MQTT attribute request on ${topic}: ${error.message}`);
     }

@@ -8,6 +8,7 @@ This file documents all *major & minor* releases. For revisions, please consult 
 - Add Identification Mode and Installation Mode diagnostic binary sensors for ViCare radiator thermostats. Expose Child Lock as a switch with command forwarding enabled and as a read-only binary sensor with forwarding disabled. These entities are disabled by default.
 - Disable Firmware Version and Lifetime Motor Steps by default on discovery.
 - Make Valve Position and Target Valve Position require both valve data and ViLocal's general MQTT availability when the general availability topic is enabled.
+- Use nine-byte ViCare zone IDs in MQTT topics for floor thermostat zones. Link each zone to its floor controller in Home Assistant. The controller shows diagnostics and a read-only Supply Temperature sensor for the manifold supply pipe.
 
 ## [3.5] - 2026-11-24
 

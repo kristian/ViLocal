@@ -28,6 +28,7 @@ import { encodePacket } from 'ember-router';
 import { eui as formatEui } from 'zbtk/format';
 import { createRouterClient } from 'ember-router/client';
 import { subscribeAttributeCommands, attributeCommand } from './attribute-commands.js';
+import { formatDeviceKey, parseDeviceKey } from './device-key.js';
 import { monitorValvePositions, valvePositionTemplates, valvePositionTopics } from './valve-positions.js';
 import packageJson from './package.json' with { type: 'json' };
 const defaultMfgCode = 0x1221; // Viessmann Elektronik GmbH
@@ -35,7 +36,7 @@ const defaultMfgCode = 0x1221; // Viessmann Elektronik GmbH
 // zbtk uses console.log for capture diagnostics. Reserve stdout for pass-through commands.
 console.log = console.info = console.debug = console.error;
 
-const TYPE_THERMOSTAT = 'thermostat', TYPE_FLOOR_THERMOSTAT = 'floor_thermostat', TYPE_CLIMATE_SENSOR = 'climate_sensor';
+const TYPE_THERMOSTAT = 'thermostat', TYPE_FLOOR_CONTROLLER = 'floor_controller', TYPE_FLOOR_THERMOSTAT = 'floor_thermostat', TYPE_CLIMATE_SENSOR = 'climate_sensor';
 
 const configFile = (await exists('local_config.toml')) ? 'local_config.toml' : 'config.toml';
 const config = parseToml(await fs.readFile(configFile, 'utf8'));
@@ -67,24 +68,31 @@ if (!config.mqtt || !config.mqtt.url) {
 }
 config.mqtt.online ??= true; // if not set, use a online topic
 
-const configDevices = new Set();
+const configDevices = new Map();
 await iterateDevices((type, id, options) => {
   if (!options?.serial_no) {
     throw new TypeError(`Missing "serial_no" of ${type.replace('_', ' ')} "${id}" in "${ configFile }"`);
   }
 
-  const { endpoint } = options;
-  if (type === TYPE_FLOOR_THERMOSTAT && (!Number.isInteger(endpoint) || endpoint < 1 || endpoint > 240)) {
-    throw new TypeError(`Floor thermostat "${id}" requires an "endpoint" from 1 to 240`);
+  const eui = fromHex(options.serial_no), endpoint = type === TYPE_FLOOR_THERMOSTAT ? options.endpoint : undefined;
+  if (type === TYPE_FLOOR_THERMOSTAT && (eui.length !== 8 || !Number.isInteger(endpoint) || endpoint < 1 || endpoint > 240)) {
+    throw new TypeError(`Floor thermostat zone "${id}" requires an eight-byte controller "serial_no" and an integer "endpoint" from 1 to 240`);
+  }
+  const formattedEui = formatEui(eui), deviceKey = formatDeviceKey(formattedEui, endpoint);
+  if (configDevices.has(deviceKey)) {
+    throw new TypeError(`Duplicate device "${deviceKey}" for "${id}"`);
+  }
+  if (type === TYPE_FLOOR_THERMOSTAT) {
+    const controller = configDevices.get(formattedEui);
+    if (!controller) {
+      configDevices.set(formattedEui, { eui, type: TYPE_FLOOR_CONTROLLER });
+    } else if (controller.type !== TYPE_FLOOR_CONTROLLER) {
+      throw new TypeError(`Floor thermostat controller "${formattedEui}" is also configured as another device. ` +
+        'Remove the separate controller entry and configure its zones under [floor_thermostats]. ViLocal adds the controller automatically.');
+    }
   }
 
-  const hexEui = fromHex(options.serial_no).toString('hex');
-  const deviceKey = endpoint === undefined ? hexEui : `${hexEui}:${endpoint}`;
-  if (configDevices.has(deviceKey)) {
-    throw new TypeError(`Duplicate device "${options.serial_no}${endpoint === undefined ? '' : `:${endpoint}`}" for "${id}"`);
-  } else {
-    configDevices.add(deviceKey);
-  }
+  configDevices.set(deviceKey, { eui, type, id, options: { ...options, endpoint } });
 });
 
 const mqttTopic = config.mqtt.topic ?? 'ViLocal', mqttAvailabilityTopic =
@@ -118,7 +126,7 @@ const knownDevices = new Set();
  * Publish a device to Home Assistant's MQTT discovery service.
  *
  * @param {Buffer} eui the EUI-64 of the device derived from the options.serial_no
- * @param {string} type "thermostat", "floor_thermostat" or "climate_sensor"
+ * @param {string} type "thermostat", "floor_thermostat", "floor_controller" or "climate_sensor"
  * @param {string} [id] the ID of the device
  * @param {object} [options] config. options for the device
  * @param {string} [options.name] the name of the device
@@ -137,7 +145,7 @@ async function publishDevice(eui, type, id, options) {
 
   const hexEui = eui.toString('hex');
   const formattedEui = formatEui(eui);
-  const formattedDeviceKey = endpoint ? `${formattedEui}:${endpoint}` : formattedEui;
+  const formattedDeviceKey = formatDeviceKey(formattedEui, endpoint);
   const deviceTopic = `${mqttTopic}/${formattedDeviceKey}`;
 
   let genericName, deviceModel;
@@ -146,9 +154,12 @@ async function publishDevice(eui, type, id, options) {
       genericName = 'Thermostat';
       deviceModel = 'ZK03840';
       break;
-    case TYPE_FLOOR_THERMOSTAT:
+    case TYPE_FLOOR_CONTROLLER:
       genericName = 'Floor Thermostat';
       deviceModel = 'ZK03838';
+      break;
+    case TYPE_FLOOR_THERMOSTAT:
+      genericName = 'Zone';
       break;
     case TYPE_CLIMATE_SENSOR:
       genericName = 'Climate Sensor';
@@ -158,7 +169,7 @@ async function publishDevice(eui, type, id, options) {
       throw new TypeError(`Unknown device type: ${type}`);
   }
 
-  const name = options?.name ?? (endpoint ? `${genericName} ${endpoint}` : genericName);
+  const name = options?.name ?? (type === TYPE_FLOOR_THERMOSTAT ? `${genericName} ${endpoint}` : genericName);
 
   // add device to the known devices list
   knownDevices.add(hexEui);
@@ -198,10 +209,11 @@ async function publishDevice(eui, type, id, options) {
     device: {
       name,
       identifiers: formattedDeviceKey,
-      serial_number: formattedEui,
+      serial_number: formattedDeviceKey,
       manufacturer: 'Viessmann',
       model: `ViCare ${genericName}`,
-      model_id: deviceModel,
+      ...(deviceModel ? { model_id: deviceModel } : {}),
+      ...(type === TYPE_FLOOR_THERMOSTAT ? { via_device: formattedEui } : {}),
       ...(options?.suggested_area ? { suggested_area: options.suggested_area } : {})
     },
     origin: { // see https://www.home-assistant.io/integrations/mqtt/#adding-information-about-the-origin-of-a-discovery-message
@@ -223,9 +235,10 @@ async function publishDevice(eui, type, id, options) {
 
   // depending of the type of device, different components will be announced:
   // - thermostats expose as a climate component
-  // - floor thermostats feature a valve position
+  // - floor thermostat zones expose the requested output level and relay state
+  // - floor controllers expose the supply temperature and diagnostics
   // - climate sensors expose as a temperature and humidity sensor
-  // all devices expose the Zigbee link quality, and battery devices also expose a sensor showing the battery level
+  // physical devices expose the Zigbee link quality. Battery devices also expose the battery level.
   if (type === TYPE_THERMOSTAT) {
     const valveSensor = {
       entity_category: 'diagnostic',
@@ -387,7 +400,17 @@ async function publishDevice(eui, type, id, options) {
     });
   }
 
-  if (type === TYPE_FLOOR_THERMOSTAT) {
+  if (type === TYPE_FLOOR_CONTROLLER) {
+    Object.assign(discovery.components, discoveryComponent('supply_temperature', 'sensor', {
+      name: 'Supply Temperature',
+      device_class: 'temperature',
+      unit_of_measurement: '°C',
+      suggested_display_precision: 1,
+      state_topic: `${deviceTopic}/0x0201/0x0000`, // Thermostat / Local Temperature
+      value_template: '{{ none if (value | int) == -32768 else (value | int) / 100 }}',
+      state_class: 'measurement'
+    }));
+  } else if (type === TYPE_FLOOR_THERMOSTAT) {
     Object.assign(discovery.components, {
       ...discoveryComponent('requested_output_level', passThrough ? 'number' : 'sensor', {
         name: 'Requested Output Level',
@@ -435,7 +458,7 @@ async function publishDevice(eui, type, id, options) {
     });
   }
 
-  if (type !== TYPE_FLOOR_THERMOSTAT) {
+  if (type === TYPE_THERMOSTAT || type === TYPE_CLIMATE_SENSOR) {
     Object.assign(discovery.components, {
       ...discoveryComponent('battery_level', 'sensor', {
         name: 'Battery Level', // will automatically get prefixed with the device name
@@ -451,43 +474,45 @@ async function publishDevice(eui, type, id, options) {
     });
   }
 
-  const diagnosticsTopic = `${mqttTopic}/${formattedEui}`;
-  Object.assign(discovery.components, {
-    ...discoveryComponent('link_quality', 'sensor', {
-      name: 'Link Quality', // will automatically get prefixed with the device name
-      entity_category: 'diagnostic',
+  if (type !== TYPE_FLOOR_THERMOSTAT) {
+    const diagnosticsTopic = `${mqttTopic}/${formattedEui}`;
+    Object.assign(discovery.components, {
+      ...discoveryComponent('link_quality', 'sensor', {
+        name: 'Link Quality', // will automatically get prefixed with the device name
+        entity_category: 'diagnostic',
 
-      icon: 'mdi:signal',
-      unit_of_measurement: '%',
-      suggested_display_precision: 0,
-      state_topic: `${diagnosticsTopic}/0x0B05/0x011C`, // Diagnostics / Last LQI
-      value_template: '{{ ((value | float) / 255) * 100 | round(1) }}',
-      state_class: 'measurement'
-    }),
-    ...discoveryComponent('signal_strength', 'sensor', {
-      name: 'Signal Strength', // will automatically get prefixed with the device name
-      entity_category: 'diagnostic',
+        icon: 'mdi:signal',
+        unit_of_measurement: '%',
+        suggested_display_precision: 0,
+        state_topic: `${diagnosticsTopic}/0x0B05/0x011C`, // Diagnostics / Last LQI
+        value_template: '{{ ((value | float) / 255) * 100 | round(1) }}',
+        state_class: 'measurement'
+      }),
+      ...discoveryComponent('signal_strength', 'sensor', {
+        name: 'Signal Strength', // will automatically get prefixed with the device name
+        entity_category: 'diagnostic',
 
-      device_class: 'signal_strength',
-      unit_of_measurement: 'dBm',
-      suggested_display_precision: 0,
-      state_topic: `${diagnosticsTopic}/0x0B05/0x011D`, // Diagnostics / Last RSSI
-      value_template: '{{ value | int }}',
-      state_class: 'measurement'
-    }),
-    ...discoveryComponent('firmware_version', 'sensor', {
-      name: 'Firmware Version',
-      entity_category: 'diagnostic',
-      enabled_by_default: false,
+        device_class: 'signal_strength',
+        unit_of_measurement: 'dBm',
+        suggested_display_precision: 0,
+        state_topic: `${diagnosticsTopic}/0x0B05/0x011D`, // Diagnostics / Last RSSI
+        value_template: '{{ value | int }}',
+        state_class: 'measurement'
+      }),
+      ...discoveryComponent('firmware_version', 'sensor', {
+        name: 'Firmware Version',
+        entity_category: 'diagnostic',
+        enabled_by_default: false,
 
-      icon: 'mdi:chip',
-      state_topic: `${diagnosticsTopic}/0x0000/0x4000` // Basic / Software Build ID
-    })
-  });
+        icon: 'mdi:chip',
+        state_topic: `${diagnosticsTopic}/0x0000/0x4000` // Basic / Software Build ID
+      })
+    });
+  }
 
   // publish to device discovery topic, see: https://www.home-assistant.io/integrations/mqtt/#discovery-messages
   // config messages are retained, see: https://www.home-assistant.io/integrations/mqtt/#using-retained-config-messages
-  await mqttClient.publishAsync(`${config.device_discovery_prefix ?? 'homeassistant'}/device/vilocal_${formattedDeviceKey.replaceAll(':', '-')}/config`,
+  await mqttClient.publishAsync(`${config.device_discovery_prefix ?? 'homeassistant'}/device/vilocal_${formattedDeviceKey}/config`,
     JSON.stringify(discovery), { retain: true });
 }
 
@@ -499,10 +524,9 @@ if (env.VILOCAL_ROUTER_SOCKET && (passThrough || routerRequests)) {
 }
 
 const passThroughFormat = router ? 'ember-router' : config.pass_through_format ?? 'json';
-
-await iterateDevices(async (type, id, options) => {
-  await publishDevice(fromHex(options.serial_no), type, id, options);
-});
+for (const { eui, type, id, options } of configDevices.values()) {
+  await publishDevice(eui, type, id, options);
+}
 
 function findDeviceAddr(eui) {
   const addr = Object.entries(addressTable).find(([, value]) => Buffer.compare(value, eui) === 0)?.[0];
@@ -608,22 +632,20 @@ if (passThrough) {
   await mqttClient.subscribeAsync(`${mqttTopic}/+/+/+/set`,
     // in MQTT protocol version 5, we can specify to essentially "ignore" retain for set message
     mqttClient.options?.protocolVersion === 5 ? { rap: true, rh: 2 } : {}
-  ); // device EUI (optionally :endpoint) / cluster / attribute / set
+  ); // device EUI or zone ID / cluster / attribute / set
   mqttClient.on('message', async (topic, message, packet) => {
     if (packet?.retain || !topic.startsWith(`${mqttTopic}/`) || !topic.endsWith('/set')) {
       return;
     }
 
-    const [deviceKey, cluster, attr, extraDash] = topic.slice(mqttTopic.length + 1, -4).split('/');
-    if (!deviceKey || deviceKey.startsWith(':') || !cluster || !attr || extraDash !== undefined) {
+    const [deviceKey, cluster, attr, extraPath] = topic.slice(mqttTopic.length + 1, -4).split('/');
+    const device = parseDeviceKey(/^[\da-f]{16}$/i.test(deviceKey) ? formatEui(deviceKey) : deviceKey);
+    if (!device || !cluster || !attr || extraPath !== undefined) {
       return;
     }
 
-    const [formattedEui, endpointStr, extraColon] = deviceKey.split(':'), eui = fromHex(formattedEui, /* reverse=*/true),
-      endpoint = endpointStr ? Number(endpointStr) : undefined, addr = findDeviceAddr(eui);
-    if (extraColon !== undefined) {
-      return;
-    }
+    const { formattedEui, endpoint } = device;
+    const eui = fromHex(formattedEui, /* reverse=*/true), addr = findDeviceAddr(eui);
 
     (resendMessage = async () => {
       try {
@@ -640,7 +662,7 @@ if (passThrough) {
 const formatAttrBuffer = buffer => bufferFormat(buffer, config.buffer_format ?? 'hex');
 async function pubAttr(eui, cluster, attr, value, endpoint) {
   const formattedValue = Buffer.isBuffer(value) ? formatAttrBuffer(reverseEndian(value)) : value;
-  const topic = `${mqttTopic}/${formatEui(eui)}${endpoint ? `:${endpoint}` : ''}/${cluster.toLowerCase()}/${attr.toLowerCase()}`;
+  const topic = `${mqttTopic}/${formatDeviceKey(formatEui(eui), endpoint)}/${cluster.toLowerCase()}/${attr.toLowerCase()}`;
   await mqttClient.publishAsync(topic, Buffer.isBuffer(formattedValue) ? formattedValue : String(formattedValue),
     { retain: config.retain_state ?? false });
   await valvePositions.update(topic, value);
@@ -670,19 +692,24 @@ const capEmitter = await processCap(config.named_pipe ?? stdin, {
       topic: (topic, { eui, cluster, packet, write, attr }) => {
         const nwk = (packet.wpan ?? packet).zbee_nwk, aps = nwk?.zbee_aps, endpoint = write ? aps?.dst : aps?.src,
           clusterId = cluster.readUInt16BE(0), attrId = attr.id.readUInt16BE(0);
-        if (router && write && nwk?.src?.readUInt16LE(0) !== 0x0000) { // keep writes from the ViCare coordinator
-          switch (true) {
-            case clusterId === 0x0008 && attrId === 0x4010: // Level Control / Requested Output
-            case clusterId === 0x0201 && attrId === 0x4003: // Thermostat / External Window Open
-            case clusterId === 0x0204 && attrId === 0x0001: // Thermostat User Interface Configuration / Keypad Lockout
-              return false; // wait for the write response instead of publishing the captured request
+        const waitForWriteResponse = router && write && nwk?.src?.readUInt16LE(0) !== 0x0000; // keep ViCare coordinator writes
+        switch (true) {
+          case waitForWriteResponse && clusterId === 0x0008 && attrId === 0x4010: // Level Control / Requested Output
+          case waitForWriteResponse && clusterId === 0x0201 && attrId === 0x4003: // Thermostat / External Window Open
+          case waitForWriteResponse && clusterId === 0x0204 && attrId === 0x0001: // Thermostat UI Configuration / Keypad Lockout
+            return false;
+          case !eui || endpoint === undefined:
+            break;
+          case clusterId === 0x0008: // Level Control
+          // keep the floor controller's endpoint 1 temperature reports on its bare EUI.
+          case clusterId === 0x0201 && attrId === 0x0000 && (write || endpoint !== 1) &&
+              configDevices.get(formatEui(eui))?.type === TYPE_FLOOR_CONTROLLER: {
+            const deviceKey = formatDeviceKey(formatEui(eui), endpoint);
+            return `${mqttTopic}/${deviceKey}/${toHex(cluster)}/${toHex(attr.id).toLowerCase()}`;
           }
         }
-        if (!eui || endpoint === undefined || clusterId !== 0x0008) { // Level Control
-          return `${mqttTopic}/${topic.slice(topic.indexOf('/') + 1)}`;
-        }
 
-        return `${mqttTopic}/${formatEui(eui)}:${endpoint}/${toHex(cluster)}/${toHex(attr.id).toLowerCase()}`;
+        return `${mqttTopic}/${topic.slice(topic.indexOf('/') + 1)}`;
       },
       retain: config.retain_state ?? false
     }
