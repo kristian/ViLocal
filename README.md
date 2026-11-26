@@ -314,7 +314,7 @@ Use [Ember Router](https://github.com/kristian/ember-router) to send thermostat 
 
 #### Set Up Ember Router
 
-Install `ember-router` 2.1 or later and have `zbtk` available from the capture setup. The writing adapter needs EmberZNet coordinator (NCP) firmware so Ember Router can operate it as a Zigbee router. For a shared setup, pair the adapter you will also use for sniffing. Stop any process using that adapter before pairing. If it already has saved router membership on the target network, skip to the optional check in step 5.
+Install `ember-router` 2.3.1 or later for `--router`, or 2.1 or later for binary `--forward`, and have `zbtk` available from the capture setup. The writing adapter needs EmberZNet coordinator (NCP) firmware so Ember Router can operate it as a Zigbee router. For a shared setup, pair the adapter you will also use for sniffing. Stop any process using that adapter before pairing. If it already has saved router membership on the target network, skip to the optional check in step 5.
 
 ```bash
 npm install -g ember-router
@@ -395,7 +395,7 @@ To use a local socket, pass `--router` followed by the `ember-router` command an
   ember-sniff -p tcp://192.168.1.42:6638 -c 19
 ```
 
-With `--router`, ViLocal sends setpoint commands and receives replies over the socket while `pass_through_commands` is enabled. You can leave `pass_through_format` at its default. The launcher adjusts ViLocal's request deadline to give Ember Router time to finish when you set `--read-timeout` or `--write-timeout`.
+With `--router`, ViLocal sends setpoint commands and receives replies over the socket while `pass_through_commands` is enabled. You can leave `pass_through_format` at its default. Socket requests retry delivery or connection failures once and use a 15-second Zigbee reply timeout by default. The launcher adjusts ViLocal's request deadline when you set `--read-timeout` or `--write-timeout`.
 
 #### Shared Capture and Write Adapter
 
@@ -408,7 +408,7 @@ Use `--shared-adapter` with `--forward` and pass the **same adapter address** to
   /usr/bin/ember-sniff -p tcp://192.168.1.42:6638 -c 19
 ```
 
-Use `ember-router write` as shown above with `--forward` so capture resumes when the writer exits. To use a socket, pass `--shared-adapter --router ember-router -p tcp://192.168.1.42:6638` before `--`. The launcher starts a short-lived `ember-router read` session for each request and resumes capture after the reply or a timeout. The deadline in shared mode also allows for restarting the router with its configured `--timeout` and for a keepalive already in progress.
+Use `ember-router write` as shown above with `--forward` so capture resumes when the writer exits. To use a socket, pass `--shared-adapter --router ember-router -p tcp://192.168.1.42:6638` before `--`. The launcher runs `ember-router read`, which waits five seconds after network resume by default. You can set `--settle-delay` in milliseconds on the router command to override this delay. Capture resumes after the reply or a timeout. The request deadline also allows for network startup and for a keepalive already in progress.
 
 Add `--router-keepalive 15` before `--router` or binary `--forward ember-router write` to enable keepalive in shared-adapter mode. At startup, the paired router sends its Basic Power Source report to Vitoconnect before packet capture begins. During operation, ViLocal briefly pauses capture to send another report after 15 minutes without a router command. Set the interval in minutes. Keepalive is off by default.
 

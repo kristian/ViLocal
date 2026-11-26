@@ -158,13 +158,13 @@ ensure_fifo() {
 # Derive the outer deadlines from Ember Router's millisecond timeouts.
 set_router_timeouts() {
   local arg option value
-  local -A timeouts=([--timeout]=45000 [--write-timeout]=15000 [--read-timeout]=5000)
+  local -A timeouts=([--timeout]=45000 [--write-timeout]=15000 [--read-timeout]=5000 [--settle-delay]=0)
   while (($#)); do
     arg=$1
     shift
     option=${arg%%=*}
     case "$option" in
-      --timeout|--write-timeout|--read-timeout)
+      --timeout|--write-timeout|--read-timeout|--settle-delay)
         if [[ "$arg" == *=* ]]; then
           value=${arg#*=}
         elif (($#)); then
@@ -181,7 +181,7 @@ set_router_timeouts() {
         else
           continue
         fi
-        if ((value >= 100 && value <= 300000)); then
+        if ((value <= 300000)) && [[ $option == --settle-delay || $value -ge 100 ]]; then
           timeouts[$option]=$value
         fi
         ;;
@@ -196,10 +196,16 @@ set_router_timeouts() {
   if $SHARED; then
     # Allow time to open and close the adapter around the network transition.
     local startup_seconds=$(( (timeouts[--timeout] + 999) / 1000 + 15 ))
-    export ROUTER_REQUEST_TIMEOUT="$((startup_seconds + reply_seconds))s"
+    local request_seconds=$((startup_seconds + reply_seconds))
+    export ROUTER_REQUEST_TIMEOUT="${request_seconds}s"
     client_seconds=$((client_seconds + startup_seconds))
     if ((KEEPALIVE_MINUTES > 0)); then
-      client_seconds=$((client_seconds + startup_seconds + reply_seconds + 10))
+      client_seconds=$((client_seconds + request_seconds + 10))
+    fi
+    if ((${#ROUTER_CMD[@]})); then
+      local settle_seconds=$(( (timeouts[--settle-delay] + 999) / 1000 ))
+      export SHARED_ROUTER_REQUEST_TIMEOUT="$((request_seconds + settle_seconds))s"
+      client_seconds=$((client_seconds + settle_seconds))
     fi
   fi
   export VILOCAL_ROUTER_CLIENT_TIMEOUT_MS=$((1000 * (client_seconds > 40 ? client_seconds : 40)))
@@ -210,6 +216,20 @@ if ((${#ROUTER_CMD[@]})); then
   TEMP_DIR="$(mktemp -d)"
   ROUTER_SOCKET="$TEMP_DIR/router.sock"
   export VILOCAL_ROUTER_SOCKET="$ROUTER_SOCKET"
+  has_read_timeout=false
+  has_settle_delay=false
+  for arg in "${ROUTER_CMD[@]:1}"; do
+    case "${arg%%=*}" in
+      --read-timeout) has_read_timeout=true ;;
+      --settle-delay) has_settle_delay=true ;;
+    esac
+  done
+  if ! $has_read_timeout; then
+    ROUTER_CMD+=(--read-timeout 15000)
+  fi
+  if $SHARED && ! $has_settle_delay; then
+    ROUTER_CMD+=(--settle-delay 5000)
+  fi
   set_router_timeouts "${ROUTER_CMD[@]:1}"
 elif [[ ${#FORWARD_CMD[@]} -gt 0 ]] && $REDIRECT_STDOUT; then
   TEMP_DIR="$(mktemp -d)"
@@ -226,10 +246,12 @@ if [[ -n "$COMMAND_FIFO" ]]; then
 fi
 
 start_vilocal() {
+  # Start Node directly so the launcher can signal it by PID.
+  local -a command=(node --require ./.pnp.cjs --loader ./.pnp.loader.mjs --disable-warning=ExperimentalWarning ./index.js)
   if [[ ${#FORWARD_CMD[@]} -gt 0 ]] && $REDIRECT_STDOUT; then
-    setsid "$@" > "$COMMAND_FIFO" &
+    setsid "${command[@]}" > "$COMMAND_FIFO" &
   else
-    setsid "$@" &
+    setsid "${command[@]}" &
   fi
   VILOCAL_PID=$!
   PIDS+=("$VILOCAL_PID")
@@ -237,8 +259,7 @@ start_vilocal() {
 
 verbose "Config: $CONFIG_FILE; shared adapter: $SHARED"
 if $SHARED; then
-  # Start Node directly so the launcher can signal it by PID.
-  start_vilocal node --require ./.pnp.cjs --loader ./.pnp.loader.mjs --disable-warning=ExperimentalWarning ./index.js
+  start_vilocal
   SHARED_ARGS=()
   if $VERBOSE; then
     SHARED_ARGS+=(--verbose)
@@ -279,7 +300,7 @@ else
     PIDS+=("$!")
   fi
 
-  start_vilocal yarn run start
+  start_vilocal
 fi
 
 STATUS=0

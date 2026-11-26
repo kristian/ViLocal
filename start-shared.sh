@@ -59,11 +59,11 @@ keepalive_seq_no=$((RANDOM & 0xff))
 
 keepalive_args=()
 if [[ -n "$SOCKET" ]] && ((keepalive_interval)); then
-  # keepalive uses write, which only accepts the options shared with read.
+  # keepalive uses write, which does not wait for a ZCL reply.
   for ((i = 1; i < ${#writer[@]}; i++)); do
     case "${writer[i]}" in
-      --read-timeout|--expect) ((i += 1)) ;;
-      --read-timeout=*|--expect=*) ;;
+      --read-timeout|--expect|--settle-delay) ((i += 1)) ;;
+      --read-timeout=*|--expect=*|--settle-delay=*) ;;
       *) keepalive_args+=("${writer[i]}") ;;
     esac
   done
@@ -169,7 +169,7 @@ use_router() {
       writer_args=("${writer[0]}" write "${keepalive_args[@]}")
     fi
   elif [[ -n "$SOCKET" ]]; then
-    deadline=${ROUTER_REQUEST_TIMEOUT:-75s}
+    deadline=${SHARED_ROUTER_REQUEST_TIMEOUT:-80s}
     writer_args=("${writer[0]}" read "${writer[@]:1}")
   fi
 

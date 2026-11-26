@@ -29,7 +29,7 @@ const RAW_RUNTIME_STATE =
         "packageLocation": "./",\
         "packageDependencies": [\
           ["buffer-to-str", "npm:1.0.0"],\
-          ["ember-router", "npm:2.2.0"],\
+          ["ember-router", "npm:2.3.1"],\
           ["mqtt", "npm:5.16.1"],\
           ["smol-toml", "npm:1.9.1"],\
           ["vilocal", "workspace:."],\
@@ -1610,11 +1610,11 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["ember-router", [\
-      ["npm:2.2.0", {\
-        "packageLocation": "./.yarn/cache/ember-router-npm-2.2.0-a52040accc-cf9db785d9.zip/node_modules/ember-router/",\
+      ["npm:2.3.1", {\
+        "packageLocation": "./.yarn/cache/ember-router-npm-2.3.1-4ee8573bbd-c5b7fbdc87.zip/node_modules/ember-router/",\
         "packageDependencies": [\
           ["commander", "npm:14.0.3"],\
-          ["ember-router", "npm:2.2.0"],\
+          ["ember-router", "npm:2.3.1"],\
           ["ember-zli", "npm:6.1.0"]\
         ],\
         "linkType": "HARD"\
@@ -3645,7 +3645,7 @@ const RAW_RUNTIME_STATE =
         "packageLocation": "./",\
         "packageDependencies": [\
           ["buffer-to-str", "npm:1.0.0"],\
-          ["ember-router", "npm:2.2.0"],\
+          ["ember-router", "npm:2.3.1"],\
           ["mqtt", "npm:5.16.1"],\
           ["smol-toml", "npm:1.9.1"],\
           ["vilocal", "workspace:."],\

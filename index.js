@@ -526,7 +526,8 @@ async function publishDevice(eui, type, id, options) {
 let router;
 if (env.VILOCAL_ROUTER_SOCKET && (passThrough || routerRequests)) {
   router = createRouterClient(env.VILOCAL_ROUTER_SOCKET, {
-    timeout: Number(env.VILOCAL_ROUTER_CLIENT_TIMEOUT_MS ?? 40_000)
+    timeout: Number(env.VILOCAL_ROUTER_CLIENT_TIMEOUT_MS ?? 40_000),
+    retry: true // retry eligible failures once, reusing the ZCL sequence number
   });
 }
 
