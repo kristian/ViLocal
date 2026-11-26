@@ -218,17 +218,30 @@ send_keepalive() {
     return
   fi
 
-  local payload
   keepalive_seq_no=$(((keepalive_seq_no + 1) & 0xff))
-  # report the Basic cluster Power Source (DC) advertised during pairing to the coordinator.
-  # this server-to-client report uses its own ZCL sequence and disables the success default response.
-  printf -v payload '18%02x0a07003004' "$keepalive_seq_no"
   if (
     cd -- "$script_dir" &&
       node --require ./.pnp.cjs --loader ./.pnp.loader.mjs --disable-warning=ExperimentalWarning --input-type=module -e '
         import { encodePacket } from "ember-router";
-        process.stdout.write(encodePacket({ destination: 0, clusterId: 0, payload: process.argv[1] }));
-      ' "$payload"
+        import { data } from "zbtk/type";
+
+        // Match the Basic attribute values served by the paired router.
+        const attributes = [
+          [0x0001, 0x20, 1],               // Application Version
+          [0x0003, 0x20, 0],               // Hardware Version (unspecified)
+          [0x0005, 0x42, "Zigbee Router"], // Model Identifier
+          [0x0007, 0x30, 4],               // Power Source (DC)
+          [0x0004, 0x42, "Generic"],       // Manufacturer Name
+        ];
+        // Server-to-client Report Attributes with success Default Response disabled.
+        const header = Buffer.from([0x18, Number(process.argv[1]), 0x0a]);
+        const records = attributes.flatMap(([id, type, value]) => [
+          Buffer.from([id & 0xff, id >> 8, type]),
+          data[type].encode(value),
+        ]);
+        const payload = Buffer.concat([header, ...records]).toString("hex");
+        process.stdout.write(encodePacket({ destination: 0, clusterId: 0, payload }));
+      ' "$keepalive_seq_no"
   ) > "$command_file"; then
     use_router "$command_file" 'router keepalive'
   else

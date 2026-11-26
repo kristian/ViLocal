@@ -314,7 +314,9 @@ Use [Ember Router](https://github.com/kristian/ember-router) to send thermostat 
 
 #### Set Up Ember Router
 
-Install `ember-router` 2.3.1 or later for `--router`, or 2.1 or later for binary `--forward`, and have `zbtk` available from the capture setup. The writing adapter needs EmberZNet coordinator (NCP) firmware so Ember Router can operate it as a Zigbee router. For a shared setup, pair the adapter you will also use for sniffing. Stop any process using that adapter before pairing. If it already has saved router membership on the target network, skip to the optional check in step 5.
+The examples use Ember Router 2.4.0 or later. The install-code and link-key commands below require the `zbtk` CLI on your `PATH`. You can install it with `npm install -g zbtk`, if it is not already installed, as shown in the capture setup. `--respond-basic-reads` answers Vitoconnect's Basic Read Attributes requests while the router session is open. With older versions, omit that option. `--router` requires Ember Router 2.3.1 or later and binary `--forward` requires 2.1 or later.
+
+Pass the manufacturer code used during pairing when resuming the router. The writing adapter needs EmberZNet coordinator (NCP) firmware so Ember Router can operate it as a Zigbee router. For a shared setup, pair the adapter you will also use for sniffing. Stop any process using that adapter before pairing. If it already has saved router membership on the target network, skip to the optional check in step 5.
 
 ```bash
 npm install -g ember-router
@@ -353,7 +355,7 @@ Replace `ADAPTER` with your adapter's TCP address or serial port. Run the follow
 
    The join command can exit before ViCare finishes adding the repeater. Wait for the app to complete setup before using the adapter again.
 
-   **Optional check:** Run `ember-router -p "$ADAPTER"` to confirm it resumes the saved network. Stop it with Ctrl+C after it reports the resumed network so the launcher can open its own `ember-router write` session.
+   **Optional check:** Run `ember-router -p "$ADAPTER" -m UBISYS_TECHNOLOGIES_GMBH --respond-basic-reads` to confirm it resumes the saved network. Stop it with Ctrl+C after it reports the resumed network so the launcher can open its own `ember-router write` session.
 
 #### Configure ViLocal
 
@@ -378,20 +380,23 @@ With two adapters, pipe `start.sh` directly to `ember-router write`. The sniffer
 
 ```bash
 ./start.sh /usr/bin/ember-sniff -p tcp://192.168.1.42:6638 -c 19 |
-  ember-router write -p tcp://192.168.1.43:6638
+  ember-router write -p tcp://192.168.1.43:6638 \
+    -m UBISYS_TECHNOLOGIES_GMBH --respond-basic-reads
 ```
 
 Use `--forward` if you want `start.sh` to start and supervise the writer alongside ViLocal and the sniffer. Both forms forward the same commands. Add `--verbose` (or `-v`) before `--forward` to see the capture handoff and any packet replies from the writer on stderr.
 
 ```bash
-./start.sh --forward ember-router write -p tcp://192.168.1.43:6638 -- \
+./start.sh --forward ember-router write -p tcp://192.168.1.43:6638 \
+  -m UBISYS_TECHNOLOGIES_GMBH --respond-basic-reads -- \
   /usr/bin/ember-sniff -p tcp://192.168.1.42:6638 -c 19
 ```
 
 To use a local socket, pass `--router` followed by the `ember-router` command and adapter options. The router stays connected on the write adapter. `-gg` reconnects it after adapter loss.
 
 ```bash
-./start.sh --router ember-router -p tcp://192.168.1.43:6638 -gg -- \
+./start.sh --router ember-router -p tcp://192.168.1.43:6638 -gg \
+  -m UBISYS_TECHNOLOGIES_GMBH --respond-basic-reads -- \
   ember-sniff -p tcp://192.168.1.42:6638 -c 19
 ```
 
@@ -404,13 +409,23 @@ A single Ember adapter can do both jobs by switching modes. During normal monito
 Use `--shared-adapter` with `--forward` and pass the **same adapter address** to both commands. Shared mode requires `timeout` with `-k` support. Add `--verbose` (or `-v`) before `--forward` to see the capture handoff and any packet replies from the writer on stderr.
 
 ```bash
-./start.sh --shared-adapter --forward ember-router write -p tcp://192.168.1.42:6638 -- \
+./start.sh --shared-adapter --forward ember-router write -p tcp://192.168.1.42:6638 \
+  -m UBISYS_TECHNOLOGIES_GMBH --respond-basic-reads -- \
   /usr/bin/ember-sniff -p tcp://192.168.1.42:6638 -c 19
 ```
 
-Use `ember-router write` as shown above with `--forward` so capture resumes when the writer exits. To use a socket, pass `--shared-adapter --router ember-router -p tcp://192.168.1.42:6638` before `--`. The launcher runs `ember-router read`, which waits five seconds after network resume by default. You can set `--settle-delay` in milliseconds on the router command to override this delay. Capture resumes after the reply or a timeout. The request deadline also allows for network startup and for a keepalive already in progress.
+Use `ember-router write` as shown above with `--forward` so capture resumes when the writer exits. Enable keepalive for a shared socket with `--router-keepalive`.
 
-Add `--router-keepalive 15` before `--router` or binary `--forward ember-router write` to enable keepalive in shared-adapter mode. At startup, the paired router sends its Basic Power Source report to Vitoconnect before packet capture begins. During operation, ViLocal briefly pauses capture to send another report after 15 minutes without a router command. Set the interval in minutes. Keepalive is off by default.
+```bash
+./start.sh --shared-adapter --router-keepalive 15 \
+  --router ember-router -p tcp://192.168.1.42:6638 \
+  -m UBISYS_TECHNOLOGIES_GMBH --respond-basic-reads -- \
+  /usr/bin/ember-sniff -p tcp://192.168.1.42:6638 -c 19
+```
+
+For socket requests, the launcher runs `ember-router read`, which waits five seconds after network resume by default. You can set `--settle-delay` in milliseconds on the router command to override this delay. Capture resumes after the reply or a timeout. The request deadline also allows for network startup and for a keepalive already in progress.
+
+You can also put `--router-keepalive 15` before binary `--forward ember-router write`. At startup, the paired router sends a Basic attribute report to Vitoconnect before packet capture begins. It includes Application Version, Hardware Version (unspecified), Model Identifier, Power Source, and Manufacturer Name. During operation, ViLocal briefly pauses capture to send another report after 15 minutes without a router command. Set the interval in minutes. Keepalive is off by default.
 
 ViLocal and its MQTT connection stay up during the switch. Shared mode is experimental. Test repeated switches on your adapter and firmware to confirm capture resumes and the saved network remains usable.
 

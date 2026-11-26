@@ -8,6 +8,8 @@ Add German device and entity labels for Home Assistant MQTT discovery. English r
 
 ViLocal now adapts learned valve position ranges for ViCare radiator thermostats. Once the observed travel exceeds 500 steps, the range can continue growing in either direction up to 600 steps. Readings beyond that limit shift the range by the excess, so Home Assistant can keep estimating valve positions. ViLocal also reuses the previous range when a calibration sweep ends without identifying a new closed position.
 
+Shared-adapter keepalive reports the five Basic attributes requested by Vitoconnect. The router examples enable the Basic Read Attributes responder from Ember Router 2.4.0 while the router has the adapter.
+
 ## [3.6] - 2026-11-25
 
 - Add an External Window Open switch for ViCare radiator thermostats. Home Assistant and MQTT automations can use external contact sensors to set or clear the thermostat's own window-open input. The Window Open sensor continues to show the thermostat's reported state.
