@@ -483,9 +483,11 @@ These entities are disabled by default in Home Assistant, along with Firmware Ve
 - Valve Position shows how far the radiator valve is open. Target Valve Position shows the opening the thermostat is aiming for and is disabled by default in Home Assistant.
 - Lifetime Motor Steps shows the thermostat's lifetime motor movement counter.
 
-Before ViCare can show the valve position of thermostats, ViLocal needs to observe enough movement to determine the full range of the valve. This ensures that the reported valve position are accurate and reliable. Home Assistant shows valve percentages only once ViLocal has seen enough movement to make a reasonable estimate. The valve sensors show Unavailable while ViLocal is still learning, while the thermostat is calibrating, or when ViLocal's general MQTT availability topic reports it offline.
+Home Assistant shows valve percentages once ViLocal has enough information to estimate the valve's range. The valve sensors show Unavailable while ViLocal is still learning, while the thermostat is calibrating, or when ViLocal's general MQTT availability topic reports it offline.
 
-ViLocal learns the valve's range by watching it open and close during everyday heating and remembers that range across restarts. When ViCare calibrates the valve, the thermostat moves through a series of positions called a calibration sweep. Watching this sweep helps ViLocal learn the range sooner.
+ViLocal learns the valve's range by watching it open and close during everyday heating and retains the bounds in MQTT for restarts. Once the observed travel exceeds 500 motor steps, a reading that would stretch the range beyond 600 steps shifts it to include the new reading. For example, a reading of 90 shifts a learned range of 100–700 to 90–690.
+
+When ViCare calibrates the valve, the thermostat moves through a series of positions called a calibration sweep. Watching this sweep helps ViLocal learn the range sooner.
 
 > [!TIP]
 > Try moving the valve through its full range to help ViLocal learn the valve's limits faster.

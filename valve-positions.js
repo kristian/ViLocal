@@ -66,6 +66,18 @@ function hasUsableRange(state) {
   return span > MIN_ESTIMATED_TRAVEL && span <= VALVE_TRAVEL;
 }
 
+function extendRange(range, value) {
+  const low = Math.min(range?.low ?? value, value);
+  const high = Math.max(range?.high ?? value, value);
+  if (high - low <= VALVE_TRAVEL) {
+    return { low, high };
+  }
+  if (hasUsableRange(range)) {
+    // Keep a learned estimate by moving the window to the new endpoint.
+    return value === low ? { low, high: low + VALVE_TRAVEL } : { low: high - VALVE_TRAVEL, high };
+  }
+}
+
 const attrsSuffix = `/${valvePositionTopics.attributes}`;
 const retained = { retain: true, qos: 1 };
 
@@ -90,7 +102,7 @@ function advanceCalibration(calibration, target, observedAt) {
   const resumedAfterGap = candidate && candidate.target > calibration.target
     && isSweepTarget(candidate.target) && followsSweep(candidate, target, observedAt);
   if (followsSweep(calibration, target, observedAt) || resumedAfterGap) {
-    return { target, observedAt };
+    return { target, observedAt, previousRange: calibration.previousRange };
   }
 
   // wait for a second distinct departure. A normal target before any sweep can cancel it immediately.
@@ -165,17 +177,19 @@ export async function monitorValvePositions(mqttClient, mqttTopic, retainState =
       return;
     }
     // a retained replay may arrive after SUBACK and an early live reading.
-    let state = {
-      ...current,
+    const saved = { low, high };
+    let bounds = {
       low: Math.min(current?.low ?? low, low),
-      high: Math.max(current?.high ?? high, high),
-      restored: true
+      high: Math.max(current?.high ?? high, high)
     };
-    if (state.high - state.low > VALVE_TRAVEL) {
-      // keep the new observations if a delayed replay would produce an oversized range.
-      state = { ...current, restored: true };
+    if (bounds.high - bounds.low > VALVE_TRAVEL) {
+      // Use early observations to shift a learned range unless they already establish one.
+      bounds = current && hasUsableRange(saved) && !hasUsableRange(current)
+        ? extendRange(saved, current.low < low ? current.low : current.high)
+        : current;
     }
-    retainedRanges.set(deviceTopic, { low, high });
+    const state = { ...current, ...bounds, restored: true };
+    retainedRanges.set(deviceTopic, saved);
     positions.set(deviceTopic, state);
     if (state.low !== low || state.high !== high) {
       await persistRange(deviceTopic, { previous: current });
@@ -207,10 +221,8 @@ export async function monitorValvePositions(mqttClient, mqttTopic, retainState =
     const previous = positions.get(deviceTopic);
     const calibration = previous?.calibration;
     if (position === 'target' && value === CALIBRATION_TARGET) {
-      if (!calibration) {
-        startCalibration(deviceTopic, observedAt, previous);
-      } else if (calibration.target !== CALIBRATION_TARGET) {
-        positions.set(deviceTopic, { ...previous, calibration: { target: value, observedAt } });
+      if (!calibration || calibration.target !== CALIBRATION_TARGET) {
+        startCalibration(deviceTopic, observedAt, calibration ? calibration.previousRange : previous);
       }
       return;
     }
@@ -231,20 +243,16 @@ export async function monitorValvePositions(mqttClient, mqttTopic, retainState =
     const lastProbe = calibration?.target;
     const candidateTarget = calibration?.candidate?.target;
     const closedPosition = lastProbe > CALIBRATION_TARGET && candidateTarget < lastProbe ? candidateTarget : undefined;
-    // a return to normal before any sweep step means the previous range still applies.
-    const range = calibration?.previousRange ?? previous;
-    const lowerBound = closedPosition ?? range?.low ?? value;
-    const upperBound = closedPosition === undefined ? range?.high ?? value : closedPosition + VALVE_TRAVEL;
-    const low = Math.min(lowerBound, value);
-    const high = Math.max(upperBound, value);
-    const reset = high - low > VALVE_TRAVEL;
+    const calibratedRange = closedPosition === undefined ? undefined
+      : { low: closedPosition, high: closedPosition + VALVE_TRAVEL };
+    // An inconclusive sweep leaves the previous range as the starting point.
+    const previousRange = calibration ? calibration.previousRange : previous;
+    const bounds = extendRange(calibratedRange ?? previousRange, value);
     const state = {
-      ...(reset ? {} : range),
+      ...(bounds ? previousRange : undefined),
       [position]: topic,
-      low: reset ? value : low,
-      high: reset ? value : high,
-      calibration: undefined,
-      restored: reset || previous?.restored
+      ...(bounds ?? { low: value, high: value }),
+      restored: !bounds || previous?.restored
     };
     positions.set(deviceTopic, state);
   }
