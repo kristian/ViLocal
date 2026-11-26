@@ -357,6 +357,7 @@ async function publishDevice(eui, type, id, options) {
       }),
       ...discoveryComponent('target_valve_position', 'sensor', {
         name: 'Target Valve Position',
+        enabled_by_default: false,
 
         ...valveSensor,
         state_topic: `${deviceTopic}/${valvePositionTopics.target}`

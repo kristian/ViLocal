@@ -480,7 +480,7 @@ These entities are disabled by default in Home Assistant, along with Firmware Ve
 
 ### Thermostat Valve Positions
 
-- Valve Position shows how far the radiator valve is open. Target Valve Position shows the opening the thermostat is aiming for.
+- Valve Position shows how far the radiator valve is open. Target Valve Position shows the opening the thermostat is aiming for and is disabled by default in Home Assistant.
 - Lifetime Motor Steps shows the thermostat's lifetime motor movement counter.
 
 Before ViCare can show the valve position of thermostats, ViLocal needs to observe enough movement to determine the full range of the valve. This ensures that the reported valve position are accurate and reliable. Home Assistant shows valve percentages only once ViLocal has seen enough movement to make a reasonable estimate. The valve sensors show Unavailable while ViLocal is still learning, while the thermostat is calibrating, or when ViLocal's general MQTT availability topic reports it offline.
