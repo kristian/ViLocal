@@ -519,7 +519,7 @@ async function publishDevice(eui, type, id, options) {
 
   // publish to device discovery topic, see: https://www.home-assistant.io/integrations/mqtt/#discovery-messages
   // config messages are retained, see: https://www.home-assistant.io/integrations/mqtt/#using-retained-config-messages
-  await mqttClient.publishAsync(`${config.device_discovery_prefix ?? 'homeassistant'}/device/vilocal_${formattedDeviceKey}/config`,
+  await mqttClient.publishAsync(`${config.mqtt?.device_discovery_prefix ?? 'homeassistant'}/device/vilocal_${formattedDeviceKey}/config`,
     JSON.stringify(discovery), { retain: true });
 }
 

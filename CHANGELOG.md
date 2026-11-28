@@ -8,7 +8,7 @@ Add German device and entity labels for Home Assistant MQTT discovery. English r
 
 ViLocal now adapts learned valve position ranges for ViCare radiator thermostats. Once the observed travel exceeds 500 steps, the range can continue growing in either direction up to 600 steps. Readings beyond that limit shift the range by the excess, so Home Assistant can keep estimating valve positions. ViLocal also reuses the previous range when a calibration sweep ends without identifying a new closed position.
 
-Shared-adapter keepalive reports the five Basic attributes requested by Vitoconnect. The router examples enable the Basic Read Attributes responder from Ember Router 2.4.0 while the router has the adapter.
+Shared-adapter keepalive sends a Basic attribute report and an inactive Identify report to Vitoconnect. Ember Router 2.4.2 can listen for follow-up requests for five seconds after the reports are sent. The shared-adapter examples use a 60-minute keepalive interval.
 
 ## [3.6] - 2026-11-25
 

@@ -1,5 +1,8 @@
 .vscode/
 .yarn/
+.yarnrc.yml
+.pnp.cjs
+.pnp.loader.mjs
 .editorconfig
 .gitattributes
 local_config.toml

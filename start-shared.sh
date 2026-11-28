@@ -55,6 +55,7 @@ writer_pid=
 command_relay_pid=
 write_timeout=30s
 keepalive_interval=${ROUTER_KEEPALIVE_SECONDS:-0}
+keepalive_listen_seconds=${ROUTER_KEEPALIVE_LISTEN_SECONDS:-5}
 keepalive_seq_no=$((RANDOM & 0xff))
 
 keepalive_args=()
@@ -164,10 +165,12 @@ use_router() {
   local deadline=$write_timeout
   local -a writer_args=("${writer[@]}")
   if [[ "$operation" == 'router keepalive' ]] && $BINARY; then
-    deadline=${ROUTER_REQUEST_TIMEOUT:-75s}
+    deadline=${ROUTER_REQUEST_TIMEOUT:-$((90 + keepalive_listen_seconds))s}
     if [[ -n "$SOCKET" ]]; then
       writer_args=("${writer[0]}" write "${keepalive_args[@]}")
     fi
+    # Keep the router available for coordinator requests after sending both reports.
+    writer_args=(env EMBER_ROUTER_LISTEN_AFTER_WRITE_MS="$((keepalive_listen_seconds * 1000))" "${writer_args[@]}")
   elif [[ -n "$SOCKET" ]]; then
     deadline=${SHARED_ROUTER_REQUEST_TIMEOUT:-80s}
     writer_args=("${writer[0]}" read "${writer[@]:1}")
@@ -218,30 +221,10 @@ send_keepalive() {
     return
   fi
 
-  keepalive_seq_no=$(((keepalive_seq_no + 1) & 0xff))
+  keepalive_seq_no=$(((keepalive_seq_no + 2) & 0xff))
   if (
     cd -- "$script_dir" &&
-      node --require ./.pnp.cjs --loader ./.pnp.loader.mjs --disable-warning=ExperimentalWarning --input-type=module -e '
-        import { encodePacket } from "ember-router";
-        import { data } from "zbtk/type";
-
-        // Match the Basic attribute values served by the paired router.
-        const attributes = [
-          [0x0001, 0x20, 1],               // Application Version
-          [0x0003, 0x20, 0],               // Hardware Version (unspecified)
-          [0x0005, 0x42, "Zigbee Router"], // Model Identifier
-          [0x0007, 0x30, 4],               // Power Source (DC)
-          [0x0004, 0x42, "Generic"],       // Manufacturer Name
-        ];
-        // Server-to-client Report Attributes with success Default Response disabled.
-        const header = Buffer.from([0x18, Number(process.argv[1]), 0x0a]);
-        const records = attributes.flatMap(([id, type, value]) => [
-          Buffer.from([id & 0xff, id >> 8, type]),
-          data[type].encode(value),
-        ]);
-        const payload = Buffer.concat([header, ...records]).toString("hex");
-        process.stdout.write(encodePacket({ destination: 0, clusterId: 0, payload }));
-      ' "$keepalive_seq_no"
+      node --require ./.pnp.cjs --loader ./.pnp.loader.mjs --disable-warning=ExperimentalWarning ./router-keepalive.js "$keepalive_seq_no"
   ) > "$command_file"; then
     use_router "$command_file" 'router keepalive'
   else

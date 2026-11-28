@@ -18,6 +18,7 @@ fi
 VERBOSE=false
 SHARED=false
 KEEPALIVE_MINUTES=0
+KEEPALIVE_LISTEN_SECONDS=5
 while true; do
   case "${1:-}" in
     -v|--verbose) VERBOSE=true ;;
@@ -158,13 +159,16 @@ ensure_fifo() {
 # Derive the outer deadlines from Ember Router's millisecond timeouts.
 set_router_timeouts() {
   local arg option value
-  local -A timeouts=([--timeout]=45000 [--write-timeout]=15000 [--read-timeout]=5000 [--settle-delay]=0)
+  local -A timeouts=(
+    [--timeout]=45000 [--write-timeout]=15000 [--read-timeout]=5000 [--settle-delay]=0
+    [--listen-after-write]=$((KEEPALIVE_LISTEN_SECONDS * 1000))
+  )
   while (($#)); do
     arg=$1
     shift
     option=${arg%%=*}
     case "$option" in
-      --timeout|--write-timeout|--read-timeout|--settle-delay)
+      --timeout|--write-timeout|--read-timeout|--settle-delay|--listen-after-write)
         if [[ "$arg" == *=* ]]; then
           value=${arg#*=}
         elif (($#)); then
@@ -181,7 +185,7 @@ set_router_timeouts() {
         else
           continue
         fi
-        if ((value <= 300000)) && [[ $option == --settle-delay || $value -ge 100 ]]; then
+        if ((value <= 300000)) && [[ $option == --settle-delay || $option == --listen-after-write || $value -ge 100 ]]; then
           timeouts[$option]=$value
         fi
         ;;
@@ -197,10 +201,13 @@ set_router_timeouts() {
     # Allow time to open and close the adapter around the network transition.
     local startup_seconds=$(( (timeouts[--timeout] + 999) / 1000 + 15 ))
     local request_seconds=$((startup_seconds + reply_seconds))
-    export ROUTER_REQUEST_TIMEOUT="${request_seconds}s"
     client_seconds=$((client_seconds + startup_seconds))
     if ((KEEPALIVE_MINUTES > 0)); then
-      client_seconds=$((client_seconds + request_seconds + 10))
+      # Budget one APS delivery timeout each for the Basic and Identify reports.
+      local keepalive_ms=$((2 * write_ms + timeouts[--listen-after-write]))
+      local keepalive_seconds=$((startup_seconds + (keepalive_ms + 999) / 1000))
+      export ROUTER_REQUEST_TIMEOUT="${keepalive_seconds}s"
+      client_seconds=$((client_seconds + keepalive_seconds + 10))
     fi
     if ((${#ROUTER_CMD[@]})); then
       local settle_seconds=$(( (timeouts[--settle-delay] + 999) / 1000 ))
@@ -274,6 +281,7 @@ if $SHARED; then
     SHARED_ARGS+=(--binary)
   fi
   VILOCAL_PID="$VILOCAL_PID" ROUTER_KEEPALIVE_SECONDS="$((KEEPALIVE_MINUTES * 60))" \
+    ROUTER_KEEPALIVE_LISTEN_SECONDS="$KEEPALIVE_LISTEN_SECONDS" \
     setsid bash "$(dirname "$0")/start-shared.sh" "${SHARED_ARGS[@]}" "${SHARED_WRITER[@]}" -- "${PIPE_CMD[@]}" < "$SHARED_INPUT" > "$FIFO" &
   verbose "Shared-adapter helper started (PID $!)"
   PIDS+=("$!")

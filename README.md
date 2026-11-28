@@ -57,6 +57,8 @@ node -v
 sudo corepack enable
 ```
 
+If `corepack` is unavailable, install it with `sudo npm install -g corepack` and run `sudo corepack enable` again.
+
 While you are at it, also install the ZigBee Toolkit (`zbtk`), it will come in handy later:
 
 ```bash
@@ -145,18 +147,19 @@ Press save and continue with the next step. Back on your Raspberry Pi, we can no
 cd
 wget https://github.com/kristian/ViLocal/archive/refs/heads/main.zip
 unzip main.zip
+cd ViLocal-main
 ```
 
 Alternatively, in case you have `git` installed locally (and your device is connected to the internet) you can also clone the repository, allowing you to easily upgrade ViLocal using a `git pull` in future:
 
 ```bash
 git clone https://github.com/kristian/ViLocal.git
+cd ViLocal
 ```
 
 Start by editing the `config.toml` configuration file:
 
 ```bash
-cd ViLocal-main
 nano config.toml
 ```
 
@@ -165,7 +168,7 @@ In case you used a `git clone`, it might be more favorable for you to copy the c
 Now change the following options:
 
 - `network_key`: To the previously captured network key, so `52f0fe8052ebb35907daa243c95a2ff4` in this example
-- `mqtt.broker`: To the broker URL / the host of your Home Assistant installation, e.g.: `mqtt://192.168.1.10:1883`
+- `mqtt.url`: To the broker URL / the host of your Home Assistant installation, e.g.: `mqtt://192.168.1.10:1883`
 - `mqtt.username` and `mqtt.password`: To the user and password that we created in the last step. User `mqtt`, password `abcd1234`
 
 With these changes, we can go ahead save the file and would be ready to start using ViLocal. However in order to expose your ViCare thermostats to Home Assistant with the names as they appear for instance in your ViCare app and to associate any ViCare climate sensors in the room to their associated thermostats, it is recommended to list out all your ViCare devices in the `config.toml` file as well. If you skip this step, ViLocal will automatically publish found ViCare devices to your MQTT broker with generic names (Thermostat 1, Thermostat 2, etc.) anyways.
@@ -218,7 +221,7 @@ In Home Assistant, each configured zone is linked to its floor controller and sh
 
 ViLocal adds the floor controller when you configure any of its zones. The controller shows diagnostics and a read-only Supply Temperature sensor for the manifold supply pipe.
 
-To send requested output levels from Home Assistant, enable command forwarding and use a paired Ember Router. With `pass_through_commands = false`, the requested output is read-only. Vitoconnect can replace the requested level on its next update. ViCare still manages room-temperature targets and schedules. [Enable Thermostat Writes](#5-optional-enable-thermostat-writes)
+To send requested output levels from Home Assistant, enable command forwarding and use a paired Ember Router. With `pass_through_commands = false`, Home Assistant shows Requested Output Level as a read-only sensor. Vitoconnect can replace the requested level on its next update. ViCare still manages room-temperature targets and schedules. [Enable Thermostat Writes](#5-optional-enable-thermostat-writes)
 
 With a shared adapter, Output Active can lag until the next controller report. For direct MQTT access, see [Floor Thermostat MQTT Topics](#floor-thermostat-mqtt-topics).
 
@@ -297,7 +300,7 @@ Test the service with:
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl start vilocal.service
-sudo systemctl status
+sudo systemctl status vilocal.service
 ```
 
 If you see ViLocal running, enable the service, to run it automatically after startup:
@@ -314,12 +317,12 @@ Use [Ember Router](https://github.com/kristian/ember-router) to send thermostat 
 
 #### Set Up Ember Router
 
-The examples use Ember Router 2.4.0 or later. The install-code and link-key commands below require the `zbtk` CLI on your `PATH`. You can install it with `npm install -g zbtk`, if it is not already installed, as shown in the capture setup. `--respond-basic-reads` answers Vitoconnect's Basic Read Attributes requests while the router session is open. With older versions, omit that option. `--router` requires Ember Router 2.3.1 or later and binary `--forward` requires 2.1 or later.
+The examples use Ember Router 2.4.2 or later. `--answer-coordinator-requests` answers Basic attribute reads, Basic Power Source Configure Reporting, and Identify requests while the router session is open. The install-code and link-key commands below require `zbtk` on your `PATH`. You can install it with `npm install -g zbtk` as shown in the capture setup.
 
 Pass the manufacturer code used during pairing when resuming the router. The writing adapter needs EmberZNet coordinator (NCP) firmware so Ember Router can operate it as a Zigbee router. For a shared setup, pair the adapter you will also use for sniffing. Stop any process using that adapter before pairing. If it already has saved router membership on the target network, skip to the optional check in step 5.
 
 ```bash
-npm install -g ember-router
+npm install -g 'ember-router@^2.4.2'
 ADAPTER=tcp://192.168.1.43:6638
 ```
 
@@ -355,7 +358,7 @@ Replace `ADAPTER` with your adapter's TCP address or serial port. Run the follow
 
    The join command can exit before ViCare finishes adding the repeater. Wait for the app to complete setup before using the adapter again.
 
-   **Optional check:** Run `ember-router -p "$ADAPTER" -m UBISYS_TECHNOLOGIES_GMBH --respond-basic-reads` to confirm it resumes the saved network. Stop it with Ctrl+C after it reports the resumed network so the launcher can open its own `ember-router write` session.
+   **Optional check:** Run `ember-router -p "$ADAPTER" -m UBISYS_TECHNOLOGIES_GMBH --answer-coordinator-requests` to confirm it resumes the saved network. Stop it with Ctrl+C after it reports the resumed network so the launcher can open its own `ember-router write` session.
 
 #### Configure ViLocal
 
@@ -370,7 +373,7 @@ pass_through_format = "ember-router"
 ```
 
 - `named_pipe` is the capture FIFO used by `start.sh`. The launcher uses Bash, `mkfifo`, and `setsid`. For either FIFO option, use a single-quoted literal path or a double-quoted path without escapes.
-- `pass_through_commands` defaults to `true`. With pipe forwarding, this sends commands on ViLocal's stdout. Set it to a separate FIFO path, such as `"/run/vicare_commands.fifo"`, to route commands through that FIFO. The launcher reads the command FIFO exclusively. It can use an existing FIFO and rejects regular files at either path. Set the option to `false` to disable command forwarding.
+- `pass_through_commands` defaults to `true`. With pipe forwarding, this sends commands on ViLocal's stdout. Set it to a separate FIFO path, such as `"/run/vicare_commands.fifo"`, to route commands through that FIFO. The launcher reads the command FIFO exclusively. It can use an existing FIFO and rejects regular files at either path. Set the option to `false` to disable forwarding Home Assistant commands. With `--router`, set `router_requests = false` under `[mqtt]` to disable on-demand MQTT reads and writes as well.
 - `pass_through_format` determines what ViLocal emits. Select `"ember-router"` to send binary packets directly to Ember Router 2.1 or later. Select `"json"` to send newline-delimited JSON to other consumers.
 - `ember_router_sequence_file` stores the ZCL transaction number across ViLocal restarts. It defaults to `".ember-router-seq"` in the directory where you start ViLocal. You can use a relative or absolute path, such as `"/var/lib/vilocal/ember-router-seq"` for a service. The parent directory must exist and be writable. Use a separate file for each ViLocal instance.
 
@@ -381,14 +384,14 @@ With two adapters, pipe `start.sh` directly to `ember-router write`. The sniffer
 ```bash
 ./start.sh /usr/bin/ember-sniff -p tcp://192.168.1.42:6638 -c 19 |
   ember-router write -p tcp://192.168.1.43:6638 \
-    -m UBISYS_TECHNOLOGIES_GMBH --respond-basic-reads
+    -m UBISYS_TECHNOLOGIES_GMBH --answer-coordinator-requests
 ```
 
-Use `--forward` if you want `start.sh` to start and supervise the writer alongside ViLocal and the sniffer. Both forms forward the same commands. Add `--verbose` (or `-v`) before `--forward` to see the capture handoff and any packet replies from the writer on stderr.
+Use `--forward` if you want `start.sh` to start and supervise the writer alongside ViLocal and the sniffer. Both forms forward the same commands. Add `--verbose` (or `-v`) before `--forward` to see launcher activity and packet output from the writer on stderr.
 
 ```bash
 ./start.sh --forward ember-router write -p tcp://192.168.1.43:6638 \
-  -m UBISYS_TECHNOLOGIES_GMBH --respond-basic-reads -- \
+  -m UBISYS_TECHNOLOGIES_GMBH --answer-coordinator-requests -- \
   /usr/bin/ember-sniff -p tcp://192.168.1.42:6638 -c 19
 ```
 
@@ -396,7 +399,7 @@ To use a local socket, pass `--router` followed by the `ember-router` command an
 
 ```bash
 ./start.sh --router ember-router -p tcp://192.168.1.43:6638 -gg \
-  -m UBISYS_TECHNOLOGIES_GMBH --respond-basic-reads -- \
+  -m UBISYS_TECHNOLOGIES_GMBH --answer-coordinator-requests -- \
   ember-sniff -p tcp://192.168.1.42:6638 -c 19
 ```
 
@@ -410,22 +413,22 @@ Use `--shared-adapter` with `--forward` and pass the **same adapter address** to
 
 ```bash
 ./start.sh --shared-adapter --forward ember-router write -p tcp://192.168.1.42:6638 \
-  -m UBISYS_TECHNOLOGIES_GMBH --respond-basic-reads -- \
+  -m UBISYS_TECHNOLOGIES_GMBH --answer-coordinator-requests -- \
   /usr/bin/ember-sniff -p tcp://192.168.1.42:6638 -c 19
 ```
 
 Use `ember-router write` as shown above with `--forward` so capture resumes when the writer exits. Enable keepalive for a shared socket with `--router-keepalive`.
 
 ```bash
-./start.sh --shared-adapter --router-keepalive 15 \
+./start.sh --shared-adapter --router-keepalive 60 \
   --router ember-router -p tcp://192.168.1.42:6638 \
-  -m UBISYS_TECHNOLOGIES_GMBH --respond-basic-reads -- \
+  -m UBISYS_TECHNOLOGIES_GMBH --answer-coordinator-requests -- \
   /usr/bin/ember-sniff -p tcp://192.168.1.42:6638 -c 19
 ```
 
 For socket requests, the launcher runs `ember-router read`, which waits five seconds after network resume by default. You can set `--settle-delay` in milliseconds on the router command to override this delay. Capture resumes after the reply or a timeout. The request deadline also allows for network startup and for a keepalive already in progress.
 
-You can also put `--router-keepalive 15` before binary `--forward ember-router write`. At startup, the paired router sends a Basic attribute report to Vitoconnect before packet capture begins. It includes Application Version, Hardware Version (unspecified), Model Identifier, Power Source, and Manufacturer Name. During operation, ViLocal briefly pauses capture to send another report after 15 minutes without a router command. Set the interval in minutes. Keepalive is off by default.
+You can also put `--router-keepalive 60` before binary `--forward ember-router write`. The paired router sends two reports to Vitoconnect at startup and after 60 minutes without a router command. The Basic report includes ZCL Version, Application Version, Hardware Version, Model Identifier, Power Source, Manufacturer Name, and Cluster Revision. A separate manufacturer-specific Identify report sends the inactive value for attribute `0x4000` under code `0x1221`. By default, the router listens for five seconds after both writes finish so `--answer-coordinator-requests` can answer follow-up requests before capture resumes. An explicit `--listen-after-write` on a binary `--forward` writer sets this window. Keepalive is off by default.
 
 ViLocal and its MQTT connection stay up during the switch. Shared mode is experimental. Test repeated switches on your adapter and firmware to confirm capture resumes and the saved network remains usable.
 
